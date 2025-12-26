@@ -1,0 +1,25 @@
+# Build and system files
+*.log
+*.tmp
+*.temp
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code files
+.claude/
+
+# BMAD workflow files
+_bmad/
+
+# Installation directory (if not in user home)
+scoop/
+smartddd-claude-tools/

@@ -102,7 +102,8 @@ try {
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { $env:TEMP }
 
 $Script:InstallSuccess = $false
-# 日志路径稍后在驱动器选择后设置到 InstallDir 中
+# 临时日志路径 - 在驱动器选择前使用 TEMP 目录
+$Script:LogFile = "$env:TEMP\claude-install-temp.log"
 
 #=================== 辅助函数 ===================
 
@@ -1814,13 +1815,20 @@ function Start-Installation {
         }
         $installPath = "${driveLetter}:\${InstallDir}"
 
-        # 设置日志路径到 InstallDir 中
-        $Script:LogFile = "$installPath\install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+        # 设置日志路径到 InstallDir 中，并复制临时日志内容
+        $finalLogFile = "$installPath\install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
         # 确保日志目录存在
-        $logDir = Split-Path $Script:LogFile -Parent
+        $logDir = Split-Path $finalLogFile -Parent
         if (-not (Test-Path $logDir)) {
             New-Item -ItemType Directory -Path $logDir -Force | Out-Null
         }
+        # 复制临时日志内容到最终位置（如果临时日志存在）
+        if (Test-Path $Script:LogFile) {
+            Get-Content $Script:LogFile -ErrorAction SilentlyContinue | Add-Content -Path $finalLogFile -ErrorAction SilentlyContinue
+            # 删除临时日志
+            Remove-Item $Script:LogFile -Force -ErrorAction SilentlyContinue
+        }
+        $Script:LogFile = $finalLogFile
 
         # Step 3: 网络测试
         Test-CancellationRequested

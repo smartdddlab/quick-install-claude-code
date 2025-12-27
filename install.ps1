@@ -1159,6 +1159,73 @@ function Install-ClaudeCode {
     }
 }
 
+#=================== Claude Code 跳过 onboarding 配置 ===================
+
+function Set-ClaudeOnboardingConfig {
+    Write-Header "Step 6.6: 配置 Claude Code 跳过 onboarding"
+
+    Write-Step "配置 Claude Code 跳过 onboarding..."
+
+    # 检查 Node.js 是否可用
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Warning "Node.js 不可用，跳过 onboarding 配置"
+        return $true
+    }
+
+    $claudeJsonPath = "$env:USERPROFILE\.claude.json"
+
+    if (Test-WhatIfMode) {
+        Write-Host "    [WHATIF] 配置 $claudeJsonPath 设置 hasCompletedOnboarding: true" -ForegroundColor DarkGray
+        return $true
+    }
+
+    try {
+        # 使用 Node.js 脚本创建/修改 .claude.json
+        $nodeScript = @"
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const filePath = path.join(os.homedir(), '.claude.json');
+let content = {};
+
+if (fs.existsSync(filePath)) {
+    try {
+        const existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        content = existing;
+    } catch (e) {
+        // 解析失败则使用空对象
+    }
+}
+
+content.hasCompletedOnboarding = true;
+fs.writeFileSync(filePath, JSON.stringify(content, null, 2), 'utf-8');
+console.log('Configuration saved to: ' + filePath);
+"@
+
+        $result = node --eval $nodeScript 2>&1 | Out-String
+
+        # 验证文件是否成功创建
+        if (Test-Path $claudeJsonPath) {
+            $claudeConfig = Get-Content $claudeJsonPath -Raw -ErrorAction SilentlyContinue
+            if ($claudeConfig -match 'hasCompletedOnboarding') {
+                Write-Success "Claude Code onboarding 配置完成"
+                Write-VerboseLog "配置文件: $claudeJsonPath"
+                return $true
+            } else {
+                Write-Warning "Claude Code 配置文件可能未正确配置"
+                return $true  # 不阻断安装流程
+            }
+        } else {
+            Write-Warning "Claude Code 配置文件创建失败"
+            return $true  # 不阻断安装流程
+        }
+    } catch {
+        Write-Warning "Claude Code onboarding 配置失败: $_"
+        return $true  # 失败可继续
+    }
+}
+
 #=================== SuperClaude 安装 ===================
 # 使用 uv 进行环境初始化
 
@@ -1960,6 +2027,10 @@ function Start-Installation {
         # Step 6.5: Claude Code (通过 npm 全局安装，必须在 SuperClaude 之前)
         Test-CancellationRequested
         $null = Install-ClaudeCode -InstallPath ""
+
+        # Step 6.6: 配置 Claude Code 跳过 onboarding
+        Test-CancellationRequested
+        $null = Set-ClaudeOnboardingConfig
 
         # Step 7: SuperClaude (安装到用户目录)
         Test-CancellationRequested

@@ -102,7 +102,7 @@ try {
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { $env:TEMP }
 
 $Script:InstallSuccess = $false
-$Script:LogFile = "$scriptRoot\install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+# 日志路径稍后在驱动器选择后设置到 InstallDir 中
 
 #=================== 辅助函数 ===================
 
@@ -1732,9 +1732,9 @@ function Complete-Installation {
     Write-Host "日志文件: $Script:LogFile" -ForegroundColor Gray
     Write-Host ""
     Write-Host "下一步操作:" -ForegroundColor Yellow
-    Write-Host "  1. 重启终端或运行 RefreshEnv.cmd 刷新环境" -ForegroundColor Cyan
+    Write-Host "  1. 重启终端刷新环境" -ForegroundColor Cyan
     Write-Host "  2. Claude Code CLI 命令为 'claude'" -ForegroundColor Cyan
-    Write-Host "  3. 运行 'claude --help' 验证" -ForegroundColor Cyan
+    Write-Host "  3. 运行 'claude -h' 验证" -ForegroundColor Cyan
     Write-Host ""
 
     # AC 32: 快速入门指引
@@ -1813,6 +1813,14 @@ function Start-Installation {
             throw "Drive selection failed"
         }
         $installPath = "${driveLetter}:\${InstallDir}"
+
+        # 设置日志路径到 InstallDir 中
+        $Script:LogFile = "$installPath\install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+        # 确保日志目录存在
+        $logDir = Split-Path $Script:LogFile -Parent
+        if (-not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
 
         # Step 3: 网络测试
         Test-CancellationRequested

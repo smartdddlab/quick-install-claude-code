@@ -58,15 +58,19 @@ If auto-setting fails, the script provides solutions:
 
 The `install.ps1` script is organized into functional steps:
 1. **Environment Detection** - PowerShell version >= 5.1, execution policy check
-2. **Tool Existence Detection** - Priority: scoop which > Get-Command > path detection
-3. **Git Bash Detection/Installation** - Auto-install via Scoop if missing
-4. **Network Testing** - GitHub accessibility check
-5. **Scoop Installation** - Package manager setup
-6. **Tool Installation** - Git, uv, Node.js LTS (skips if already installed)
-7. **Environment Variables** - Sets SHELL, CLAUDE_CODE_GIT_BASH_PATH
-8. **Claude Code Installation** - Installs via npm with Taobao mirror (China mode)
-9. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`), then runs `superclaude install` for initialization
-10. **Verification** - Confirms all tools are available
+2. **Drive Selection** - Selects installation drive and sets log file path to InstallDir
+3. **Tool Existence Detection** - Priority: scoop which > Get-Command > path detection
+4. **Git Bash Detection/Installation** - Auto-install via Scoop if missing
+5. **Network Testing** - GitHub accessibility check
+6. **Scoop Installation** - Package manager setup
+7. **Tool Installation** - Git, uv, Node.js LTS (skips if already installed)
+8. **Environment Variables** - Sets SHELL, CLAUDE_CODE_GIT_BASH_PATH
+9. **Claude Code Installation** - Installs via npm with Taobao mirror (China mode)
+10. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`), then runs `superclaude install` for initialization
+11. **Verification** - Confirms all tools are available
+
+### Log File Location
+Log file is saved to `<InstallDrive>:\smartddd-claude-tools\install-<timestamp>.log`
 
 ## Key Features
 

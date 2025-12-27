@@ -953,6 +953,10 @@ function Test-And-InstallGitBash {
         # AC 5: 验证 Git Bash 安装后可用
         # AC 21: Given Git Bash 安装完成，When 验证，Then bash.exe 可正常执行
         Write-Step "验证 Git Bash..."
+        if (-not $bashPath) {
+            Write-Error "Git Bash 路径为空，无法验证"
+            return $null
+        }
         if (Test-Path $bashPath) {
             try {
                 # MEDIUM 修复: 对路径加引号，处理带空格的路径

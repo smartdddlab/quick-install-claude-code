@@ -14,18 +14,24 @@
 
 ## 快速开始
 **注意:如果管理员运行了PowerShell 无法自动安装成功，请手动安装scoop 后再进行尝试**
+### Windows
 ```powershell
 # 一键安装（推荐）
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 
+```
 
+```PowerShell
+# 其他安装示例
 # 跳过 SuperClaude
 $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 
-# 组合参数
+# 组合参数(设置D盘)
 $env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
-
 ```
+## scoop 国内镜像源
+[https://gitee.com/scoop-installer-mirrors](https://gitee.com/scoop-installer-mirrors)
 
 ## 安装顺序
 

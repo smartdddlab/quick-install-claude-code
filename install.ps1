@@ -1302,6 +1302,12 @@ function Install-ClaudeCode {
     try {
         Write-Step "通过 npm 全局安装 Claude Code..."
 
+        # 配置 npm 使用淘宝镜像（如果在国内环境）
+        if ($UseChinaMirror) {
+            Write-VerboseLog "配置 npm 使用淘宝镜像..."
+            npm config set registry https://registry.npmmirror.com
+        }
+
         # 使用 npm 全局安装 (npm 安装耗时较长，需要增加重试次数和等待时间)
         # Claude Code npm 安装可能需要 2-5 分钟，取决于网络速度
         $npmInstallScript = {
@@ -1311,6 +1317,12 @@ function Install-ClaudeCode {
         }.GetNewClosure()
 
         $result = Invoke-RetryCommand -ScriptBlock $npmInstallScript -Description "Claude Code npm 安装" -MaxRetries 5 -RetryDelay 30 -LongOperation $true
+
+        # 恢复 npm 镜像设置（可选）
+        if ($UseChinaMirror) {
+            Write-VerboseLog "恢复 npm 默认镜像..."
+            npm config set registry https://registry.npmjs.org 2>&1 | Out-Null
+        }
 
         if ($result -ne $null -or (Get-Command claude -ErrorAction SilentlyContinue)) {
             try {
@@ -1499,7 +1511,37 @@ function Install-SuperClaude {
             Write-VerboseLog "可手动运行: superclaude install"
         }
 
-        Write-Success "SuperClaude 安装完成"
+        # 使用 version 命令验证 SuperClaude 是否真实安装成功
+        Write-Step "验证 SuperClaude 安装..."
+        $versionVerified = $false
+        try {
+            $superclaudeVersion = superclaude version 2>&1 | Out-String
+            if ($superclaudeVersion -and $superclaudeVersion.Trim()) {
+                Write-Success "SuperClaude 安装完成 - $superclaudeVersion"
+                $versionVerified = $true
+            }
+        } catch {
+            Write-VerboseLog "superclaude version 执行失败: $_"
+        }
+
+        if (-not $versionVerified) {
+            Write-Warning "SuperClaude version 验证失败，尝试使用 --version 参数..."
+            try {
+                $altVersion = superclaude --version 2>&1 | Out-String
+                if ($altVersion -and $altVersion.Trim()) {
+                    Write-Success "SuperClaude 安装完成 - $altVersion"
+                    $versionVerified = $true
+                }
+            } catch {
+                Write-VerboseLog "superclaude --version 执行失败: $_"
+            }
+        }
+
+        if (-not $versionVerified) {
+            Write-Warning "SuperClaude 安装可能未完成，但框架已克隆"
+            Write-Host "  可手动验证: superclaude version" -ForegroundColor Cyan
+        }
+
         return $true
 
     } catch {

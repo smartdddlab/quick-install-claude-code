@@ -62,10 +62,19 @@ The `install.ps1` script is organized into functional steps:
 3. **Git Bash Detection/Installation** - Auto-install via Scoop if missing
 4. **Network Testing** - GitHub accessibility check
 5. **Scoop Installation** - Package manager setup
-6. **Tool Installation** - Git, Python 3.12, Node.js LTS (skips if already installed)
+6. **Tool Installation** - Git, uv, Node.js LTS (skips if already installed)
 7. **Environment Variables** - Sets SHELL, CLAUDE_CODE_GIT_BASH_PATH
-8. **SuperClaude Installation** - Optional framework installation
-9. **Verification** - Confirms all tools are available
+8. **Claude Code Installation** - Installs via npm with Taobao mirror (China mode)
+9. **SuperClaude Installation** - Optional framework installation with version verification
+10. **Verification** - Confirms all tools are available
+
+## Key Features
+
+### npm Taobao Mirror (China Mode)
+When `-UseChinaMirror` is enabled (default), npm uses `https://registry.npmmirror.com` for faster downloads of Claude Code package.
+
+### SuperClaude Version Verification
+After SuperClaude installation, the script runs `superclaude version` to verify the installation was successful.
 
 ## Key Script Parameters
 
@@ -88,8 +97,10 @@ The `.github/workflows/test-windows.yml` validates script execution on Windows r
 ## Dependencies Installed
 
 - Git (with Git Bash)
-- Python 3.12+
+- uv (Python package manager)
 - Node.js 20.x LTS
+- Claude Code CLI (via npm with Taobao mirror)
+- SuperClaude Framework (optional, with version verification)
 - cc-switch (optional, via `-IncludeCcSwitch`)
 
 ## Version

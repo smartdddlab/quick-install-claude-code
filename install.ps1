@@ -868,10 +868,13 @@ function Test-And-InstallGitBash {
         Write-Host "    [WHATIF] scoop install git --skip-update" -ForegroundColor DarkGray
         $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
     } else {
+        # 设置默认路径
+        $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
+
         # 先检查 Git 是否已经在安装中或已安装
         $scoopListOutput = scoop list 2>&1 | Out-String
         if ($scoopListOutput -match 'git\s') {
-            Write-Host "  Git 已在 Scoop 中，跳过安装..." -ForegroundColor Gray
+            Write-Success "Git 已在 Scoop 中，跳过安装"
         } else {
             # 直接执行安装命令，等待完成
             Write-Host "  正在下载并安装 Git (可能需要几分钟)..." -ForegroundColor Gray
@@ -895,48 +898,26 @@ function Test-And-InstallGitBash {
                 Write-VerboseLog "Git 安装异常: $_"
                 $installExitCode = 1
             }
-
-            # 验证安装结果
-            $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
-
-            if (Test-Path $bashPath) {
-                Write-Success "Git Bash 已就绪"
-            } else {
-                # 最后尝试：检查 scoop apps 目录
-                $gitAppPath = "$env:USERPROFILE\scoop\apps\git"
-                if (Test-Path $gitAppPath) {
-                    $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
-                    if (Test-Path $bashPath) {
-                        Write-Success "Git Bash 已就绪"
-                    } else {
-                        Write-Error "Git 安装失败: Git Bash 文件未找到"
-                        return $null
-                    }
-                } else {
-                    Write-Error "Git 安装失败: 目录未创建"
-                    Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
-                    return $null
-                }
-            }
         }
 
-    # AC 5: 验证 Git Bash 安装后可用
-    # AC 21: Given Git Bash 安装完成，When 验证，Then bash.exe 可正常执行
-    Write-Step "验证 Git Bash..."
-    if (Test-Path $bashPath) {
-        try {
-            # MEDIUM 修复: 对路径加引号，处理带空格的路径
-            $result = & "$bashPath" --version 2>&1
-            Write-Success "Git Bash 验证成功"
-            Write-VerboseLog $result
-            return $bashPath
-        } catch {
-            Write-Error "Git Bash 无法执行: $_"
+        # AC 5: 验证 Git Bash 安装后可用
+        # AC 21: Given Git Bash 安装完成，When 验证，Then bash.exe 可正常执行
+        Write-Step "验证 Git Bash..."
+        if (Test-Path $bashPath) {
+            try {
+                # MEDIUM 修复: 对路径加引号，处理带空格的路径
+                $result = & "$bashPath" --version 2>&1
+                Write-Success "Git Bash 验证成功"
+                Write-VerboseLog $result
+                return $bashPath
+            } catch {
+                Write-Error "Git Bash 无法执行: $_"
+                return $null
+            }
+        } else {
+            Write-Error "Git Bash 文件不存在: $bashPath"
             return $null
         }
-    } else {
-        Write-Error "Git Bash 文件不存在: $bashPath"
-        return $null
     }
 }
 

@@ -18,11 +18,17 @@
 # 一键安装（推荐）
 irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 
-# 指定安装到 D 盘
-irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -InstallDrive D
+# 指定安装到 D 盘（使用环境变量）
+$env:CLAUDE_INSTALL_DRIVE="D"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 
 # 跳过 SuperClaude
-irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -SkipSuperClaude
+$env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
+
+# 组合参数
+$env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
+
+# 预览安装（本地运行）
+.\install.ps1 -WhatIf -Verbose
 ```
 
 ## 安装顺序

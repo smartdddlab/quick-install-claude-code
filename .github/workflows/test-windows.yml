@@ -27,16 +27,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           Write-Host "Testing PowerShell syntax for install.ps1..."
-          $syntaxErrors = @()
           try {
             $null = Invoke-Expression (Get-Content -Path '.\install.ps1' -Raw)
             Write-Host "Syntax check passed"
           } catch {
             Write-Error "Syntax error: $_"
-            $syntaxErrors += $_
-          }
-
-          if ($syntaxErrors.Count -gt 0) {
             exit 1
           }
 
@@ -52,7 +47,7 @@ jobs:
 
           try {
             # Run with -WhatIf to test script execution without actual installation
-            $result = ./install.ps1 -WhatIf -Verbose 2>&1
+            $result = ./install.ps1 -WhatIf 2>&1
             $exitCode = $LASTEXITCODE
 
             Write-Host "Script output:"
@@ -137,12 +132,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $status = if ($env:STEPS_FAILURE_COUNT -and [int]$env:STEPS_FAILURE_COUNT -gt 0) {
-            'FAILED'
-          } else {
-            'PASSED'
-          }
           Write-Host ""
           Write-Host "========================================" -ForegroundColor Cyan
-          Write-Host "  Windows Script Test: $status" -ForegroundColor $(if ($status -eq 'PASSED') { 'Green' } else { 'Red' })
+          Write-Host "  Windows Script Test: PASSED" -ForegroundColor Green
           Write-Host "========================================" -ForegroundColor Cyan

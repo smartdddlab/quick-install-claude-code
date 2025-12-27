@@ -1,5 +1,32 @@
-﻿# PowerShell 5.1+ required (works with both Windows PowerShell and PowerShell Core)
+# PowerShell 5.1+ required (works with both Windows PowerShell and PowerShell Core)
 #requires -Version 5.1
+
+# IMPORTANT: [CmdletBinding()] must be the first statement for remote execution (irm | iex)
+# For remote installation with parameters, use environment variables:
+#   $env:CLAUDE_INSTALL_DRIVE="D"; irm https://.../install.ps1 | iex
+#   $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://.../install.ps1 | iex
+[CmdletBinding()]
+param(
+    [switch]$WhatIf,
+    [switch]$SkipSuperClaude,
+    [switch]$IncludeCcSwitch,
+    [string]$InstallDrive,
+    [string]$InstallDir = "smartddd-claude-tools"
+)
+
+# 从环境变量读取远程参数（irm | iex 场景）
+if (-not $InstallDrive -and $env:CLAUDE_INSTALL_DRIVE) {
+    $InstallDrive = $env:CLAUDE_INSTALL_DRIVE
+    Write-VerboseLog "使用环境变量 CLAUDE_INSTALL_DRIVE: $InstallDrive"
+}
+if (-not $SkipSuperClaude -and $env:CLAUDE_SKIP_SUPERCLAUDE) {
+    $SkipSuperClaude = $true
+    Write-VerboseLog "使用环境变量 CLAUDE_SKIP_SUPERCLAUDE: true"
+}
+if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
+    $IncludeCcSwitch = $true
+    Write-VerboseLog "使用环境变量 CLAUDE_INCLUDE_CC_SWITCH: true"
+}
 
 <#
 .SYNOPSIS
@@ -30,15 +57,6 @@
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -InstallDrive D
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -SkipSuperClaude
 #>
-
-[CmdletBinding()]
-param(
-    [switch]$WhatIf,
-    [switch]$SkipSuperClaude,
-    [switch]$IncludeCcSwitch,
-    [string]$InstallDrive,
-    [string]$InstallDir = "smartddd-claude-tools"
-)
 
 #=================== 设置 UTF-8 编码 - 修复中文乱码问题 ===================
 # 注意：此代码必须在 param() 之后，因为 PowerShell 5.1 要求 [CmdletBinding()] 是脚本的第一个语句

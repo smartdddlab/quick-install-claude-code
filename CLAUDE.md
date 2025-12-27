@@ -20,7 +20,20 @@ This is a **Claude Code Windows 一键安装器** - a PowerShell script that aut
 
 # Remote installation from GitHub
 irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
+
+# Remote installation with parameters (use environment variables)
+$env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 ```
+
+## Remote Installation Environment Variables
+
+For `irm | iex` scenarios, parameters must be passed via environment variables:
+
+| Environment Variable | Purpose | Example |
+|---------------------|---------|---------|
+| `CLAUDE_INSTALL_DRIVE` | Installation drive | `$env:CLAUDE_INSTALL_DRIVE="D"` |
+| `CLAUDE_SKIP_SUPERCLAUDE` | Skip SuperClaude | `$env:CLAUDE_SKIP_SUPERCLAUDE="1"` |
+| `CLAUDE_INCLUDE_CC_SWITCH` | Include cc-switch | `$env:CLAUDE_INCLUDE_CC_SWITCH="1"` |
 
 ## Architecture
 

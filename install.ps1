@@ -56,6 +56,9 @@ if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -InstallDrive D
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -SkipSuperClaude
+
+    # 执行策略限制时，使用 Bypass 绕过
+    powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex"
 #>
 
 #=================== 设置 UTF-8 编码 - 修复中文乱码问题 ===================
@@ -611,7 +614,8 @@ function Test-PowerShellEnvironment {
     $policy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
     Write-VerboseLog "当前策略: $policy"
 
-    if ($policy -eq 'Restricted' -or $policy -eq 'Undefined') {
+    # Restricted: 必须阻止
+    if ($policy -eq 'Restricted') {
         Write-Error "检测到执行策略限制: $policy"
         Write-Host ""
         Write-Host "解决方案：" -ForegroundColor Yellow
@@ -621,7 +625,28 @@ function Test-PowerShellEnvironment {
         Write-Host "修改后请重新运行此脚本" -ForegroundColor Cyan
         return $false
     }
-    Write-Success "执行策略检查通过: $policy"
+
+    # Undefined: 尝试自动设置为 RemoteSigned（用户友好）
+    if ($policy -eq 'Undefined') {
+        Write-Warning "检测到执行策略为 Undefined，尝试自动设置..."
+        try {
+            # 尝试自动设置执行策略
+            $null = Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
+            $newPolicy = Get-ExecutionPolicy -Scope CurrentUser
+            Write-Success "执行策略已自动设置为: $newPolicy"
+        } catch {
+            Write-Error "自动设置执行策略失败: $_"
+            Write-Host ""
+            Write-Host "解决方案：" -ForegroundColor Yellow
+            Write-Host "  1. 运行: Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned" -ForegroundColor Cyan
+            Write-Host "  2. 或者: powershell -ExecutionPolicy Bypass -File install.ps1" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "修改后请重新运行此脚本" -ForegroundColor Cyan
+            return $false
+        }
+    } else {
+        Write-Success "执行策略检查通过: $policy"
+    }
 
     return $true
 }

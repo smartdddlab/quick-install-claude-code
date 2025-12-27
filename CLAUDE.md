@@ -35,6 +35,18 @@ For `irm | iex` scenarios, parameters must be passed via environment variables:
 | `CLAUDE_SKIP_SUPERCLAUDE` | Skip SuperClaude | `$env:CLAUDE_SKIP_SUPERCLAUDE="1"` |
 | `CLAUDE_INCLUDE_CC_SWITCH` | Include cc-switch | `$env:CLAUDE_INCLUDE_CC_SWITCH="1"` |
 
+## Execution Policy Handling
+
+The script handles PowerShell execution policy automatically:
+
+- **Restricted**: Script execution blocked → Manual intervention required
+- **Undefined**: Script attempts to auto-set `RemoteSigned` policy → Auto-recovery
+- **RemoteSigned** or **Bypass**: Runs normally
+
+If auto-setting fails, the script provides solutions:
+1. `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+2. `powershell -ExecutionPolicy Bypass -File install.ps1`
+
 ## Architecture
 
 The `install.ps1` script is organized into functional steps:

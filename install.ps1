@@ -2067,7 +2067,7 @@ function Complete-Installation {
     Write-Host "  2. Claude Code CLI 命令为 'claude'" -ForegroundColor Cyan
     Write-Host "  3. 运行 'claude --help' 验证" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "如需卸载，运行: $env:USERPROFILE\scripts\uninstall.ps1" -ForegroundColor Cyan
+    Write-Host "如需卸载，运行: $InstallPath\scripts\uninstall.ps1" -ForegroundColor Cyan
     Write-Host ""
 
     # AC 32: 快速入门指引
@@ -2194,7 +2194,11 @@ function Start-Installation {
         $superClaudePath = "$env:USERPROFILE\SuperClaude_Framework"
         $null = Install-SuperClaude -InstallPath $superClaudePath
 
-        # Step 8: 完成（卸载脚本和刷新脚本功能已移除）
+        # Step 8: 创建卸载脚本
+        Test-CancellationRequested
+        $null = New-UninstallScript -InstallPath "$env:USERPROFILE\scoop"
+
+        # Step 9: 完成
         Test-CancellationRequested
         $Script:InstallSuccess = Complete-Installation -InstallPath "$env:USERPROFILE\scoop" -BashPath $bashPath
 

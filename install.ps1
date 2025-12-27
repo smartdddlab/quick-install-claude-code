@@ -913,6 +913,10 @@ function Test-And-InstallGitBash {
         }
     } else {
         Write-Success "Scoop 已安装"
+        # 已存在时也配置国内镜像（确保镜像设置生效）
+        if ($UseChinaMirror) {
+            Configure-ScoopChinaMirror
+        }
     }
 
     # 确保 Scoop 环境变量正确配置
@@ -1031,7 +1035,8 @@ function Install-Scoop {
     $scoopDir = "$env:USERPROFILE\scoop"
 
     # 如果已存在 Scoop，跳过安装但仍配置镜像
-    if ($env:SCOOP -and (Test-Path $env:SCOOP)) {
+    # 使用目录检测替代环境变量检测，确保已安装的 Scoop 也能正确配置
+    if ((Test-Path "$scoopDir\apps\scoop") -or ($env:SCOOP -and (Test-Path $env:SCOOP))) {
         Write-Success "Scoop 已存在"
         # 已存在时也配置国内镜像（确保镜像设置生效）
         if ($UseChinaMirror) {

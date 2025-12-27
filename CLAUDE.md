@@ -65,7 +65,7 @@ The `install.ps1` script is organized into functional steps:
 6. **Tool Installation** - Git, uv, Node.js LTS (skips if already installed)
 7. **Environment Variables** - Sets SHELL, CLAUDE_CODE_GIT_BASH_PATH
 8. **Claude Code Installation** - Installs via npm with Taobao mirror (China mode)
-9. **SuperClaude Installation** - Optional framework installation with version verification
+9. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`), then runs `superclaude install` for initialization
 10. **Verification** - Confirms all tools are available
 
 ## Key Features
@@ -74,7 +74,7 @@ The `install.ps1` script is organized into functional steps:
 When `-UseChinaMirror` is enabled (default), npm uses `https://registry.npmmirror.com` for faster downloads of Claude Code package.
 
 ### SuperClaude Version Verification
-After SuperClaude installation, the script runs `superclaude version` to verify the installation was successful.
+After SuperClaude installation, the script runs `superclaude --version` to verify the installation was successful.
 
 ## Key Script Parameters
 
@@ -100,7 +100,7 @@ The `.github/workflows/test-windows.yml` validates script execution on Windows r
 - uv (Python package manager)
 - Node.js 20.x LTS
 - Claude Code CLI (via npm with Taobao mirror)
-- SuperClaude Framework (optional, with version verification)
+- SuperClaude Framework (optional, via npm `@bifrost_inc/superclaude`, with version verification)
 - cc-switch (optional, via `-IncludeCcSwitch`)
 
 ## Version

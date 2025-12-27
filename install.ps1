@@ -1418,14 +1418,13 @@ console.log('Configuration saved to: ' + filePath);
 }
 
 #=================== SuperClaude 安装 ===================
-# 使用 uv 进行环境初始化
+# 使用 npm 全局安装 @bifrost_inc/superclaude
 
 function Install-SuperClaude {
     param([string]$InstallPath)
 
     # 自动安装
     # 失败可继续
-    # 安装到 $InstallPath\SuperClaude_Framework
 
     if ($SkipSuperClaude) {
         Write-Warning "跳过 SuperClaude 安装 (用户指定)"
@@ -1434,73 +1433,67 @@ function Install-SuperClaude {
 
     Write-Header "Step 7: 安装 SuperClaude (可选)"
 
-    # 安装到与主安装目录相同的路径
-    $superClaudePath = "$InstallPath\SuperClaude_Framework"
+    # 检查 npm 是否可用
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Warning "npm 不可用，无法安装 SuperClaude"
+        Write-Host "  请确保 Node.js 已正确安装" -ForegroundColor Cyan
+        return $true  # 失败可继续
+    }
 
-    if (Test-Path $superClaudePath) {
-        Write-Success "SuperClaude 已存在"
-        return $true
+    # 检查是否已安装 SuperClaude
+    if (Get-Command superclaude -ErrorAction SilentlyContinue) {
+        try {
+            $version = superclaude --version 2>&1 | Out-String
+            if ($version) {
+                Write-Success "SuperClaude 已安装 - $version"
+                return $true
+            }
+        } catch {
+            Write-Success "SuperClaude 已安装"
+            return $true
+        }
     }
 
     if (Test-WhatIfMode) {
-        Write-Host "    [WHATIF] git clone SuperClaude 到 $superClaudePath" -ForegroundColor DarkGray
-        Write-Host "    [WHATIF] uv pip install -e $superClaudePath" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] npm install -g @bifrost_inc/superclaude" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] superclaude install" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] superclaude --version" -ForegroundColor DarkGray
         return $true
     }
 
     try {
-        # 确保 git 可用后再克隆
-        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-            Write-Error "Git 命令不可用，SuperClaude 安装失败"
-            Write-Host "  请确保 Git 已正确安装后再尝试安装 SuperClaude" -ForegroundColor Cyan
-            return $false
-        }
+        # 使用 npm 全局安装 SuperClaude
+        Write-Step "通过 npm 全局安装 SuperClaude..."
 
-        # 确保 uv 可用
-        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-            Write-Warning "uv 不可用，无法完成 SuperClaude 环境初始化"
-            Write-Host "  请确保 uv 已正确安装" -ForegroundColor Cyan
-            return $false
-        }
+        # 根据镜像设置选择 registry
+        $npmRegistry = if ($UseChinaMirror) { "https://registry.npmmirror.com" } else { "https://registry.npmjs.org" }
 
-        # 克隆仓库
-        Write-Step "克隆 SuperClaude 框架..."
-        $repoUrl = "https://github.com/SuperClaude-Org/SuperClaude_Framework.git"
-        git clone $repoUrl $superClaudePath 2>&1
+        $npmInstallScript = {
+            param($Reg)
+            $ErrorActionPreference = 'Continue'
+            npm install -g @bifrost_inc/superclaude --registry $Reg 2>&1
+            return $LASTEXITCODE
+        }.GetNewClosure()
 
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "SuperClaude 克隆失败，但可继续"
-            Write-Host "  可手动运行: git clone $repoUrl $superClaudePath" -ForegroundColor Cyan
+        $result = Invoke-RetryCommand `
+            -ScriptBlock $npmInstallScript `
+            -Description "SuperClaude npm 安装" `
+            -MaxRetries 3 `
+            -RetryDelay 30 `
+            -LongOperation $true `
+            -ArgumentList $npmRegistry
+
+        if ($result -ne 0 -and $null -eq (Get-Command superclaude -ErrorAction SilentlyContinue)) {
+            Write-Warning "SuperClaude npm 安装失败，但可继续"
+            Write-Host "  手动安装: npm install -g @bifrost_inc/superclaude --registry $npmRegistry" -ForegroundColor Cyan
             return $true
         }
 
-        # 使用 uv 进行环境初始化
-        Write-Step "使用 uv 初始化 SuperClaude 环境..."
-
-        # 检查是否有 pyproject.toml 或 requirements
-        $pyprojectPath = Join-Path $superClaudePath "pyproject.toml"
-        $requirementsPath = Join-Path $superClaudePath "requirements.txt"
-
-        if (Test-Path $pyprojectPath) {
-            # 使用 uv pip install -e 安装
-            Write-VerboseLog "检测到 pyproject.toml，使用 uv pip install -e"
-            $uvInstallResult = uv pip install -e $superClaudePath --system 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success "SuperClaude 依赖安装完成"
-            } else {
-                Write-Warning "SuperClaude uv 安装部分失败: $uvInstallResult"
-            }
-        } elseif (Test-Path $requirementsPath) {
-            # 使用 requirements.txt 安装
-            Write-VerboseLog "检测到 requirements.txt，使用 uv pip install -r"
-            $uvInstallResult = uv pip install -r $requirementsPath --system 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Success "SuperClaude 依赖安装完成"
-            } else {
-                Write-Warning "SuperClaude uv 安装部分失败: $uvInstallResult"
-            }
-        } else {
-            Write-VerboseLog "未检测到依赖文件，跳过 uv 安装"
+        # 验证 superclaude 命令是否可用
+        if (-not (Get-Command superclaude -ErrorAction SilentlyContinue)) {
+            Write-Warning "superclaude 命令不可用，跳过初始化"
+            Write-Host "  可手动运行: superclaude install" -ForegroundColor Cyan
+            return $true
         }
 
         # 运行 superclaude install 完成初始化
@@ -1513,35 +1506,22 @@ function Install-SuperClaude {
             Write-VerboseLog "可手动运行: superclaude install"
         }
 
-        # 使用 version 命令验证 SuperClaude 是否真实安装成功
+        # 使用 --version 验证 SuperClaude 安装
         Write-Step "验证 SuperClaude 安装..."
         $versionVerified = $false
         try {
-            $superclaudeVersion = superclaude version 2>&1 | Out-String
+            $superclaudeVersion = superclaude --version 2>&1 | Out-String
             if ($superclaudeVersion -and $superclaudeVersion.Trim()) {
                 Write-Success "SuperClaude 安装完成 - $superclaudeVersion"
                 $versionVerified = $true
             }
         } catch {
-            Write-VerboseLog "superclaude version 执行失败: $_"
+            Write-VerboseLog "superclaude --version 执行失败: $_"
         }
 
         if (-not $versionVerified) {
-            Write-Warning "SuperClaude version 验证失败，尝试使用 --version 参数..."
-            try {
-                $altVersion = superclaude --version 2>&1 | Out-String
-                if ($altVersion -and $altVersion.Trim()) {
-                    Write-Success "SuperClaude 安装完成 - $altVersion"
-                    $versionVerified = $true
-                }
-            } catch {
-                Write-VerboseLog "superclaude --version 执行失败: $_"
-            }
-        }
-
-        if (-not $versionVerified) {
-            Write-Warning "SuperClaude 安装可能未完成，但框架已克隆"
-            Write-Host "  可手动验证: superclaude version" -ForegroundColor Cyan
+            Write-Warning "SuperClaude --version 验证失败"
+            Write-Host "  可手动验证: superclaude --version" -ForegroundColor Cyan
         }
 
         return $true
@@ -1549,7 +1529,7 @@ function Install-SuperClaude {
     } catch {
         Write-Warning "SuperClaude 安装失败: $_"
         Write-Host "可手动安装或稍后重试" -ForegroundColor Cyan
-        return $true  # AC 26: 失败可继续
+        return $true  # 失败可继续
     }
 }
 

@@ -61,20 +61,17 @@ $Script:LogFile = "$scriptRoot\install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log
 
 #=================== 辅助函数 ===================
 
-# 检查命令是否可用
-function Test-CommandAvailable {
-    param([string]$Command)
-    return $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
-}
-
 # 并发锁文件 - 包含安装目录标识以支持多实例
 # MEDIUM 修复: 统一转换为大写，避免大小写不一致导致的锁失效
 $lockId = if ($InstallDrive) { $InstallDrive.ToUpper().TrimEnd(':') } else { 'AUTO' }
 $Script:LockFilePath = "$env:TEMP\claude-install-${lockId}.lock"
 
 # 安装工具列表（cc-switch 可能在非默认 bucket）
-# AC 13: 支持 -IncludeCcSwitch 参数将 cc-switch 加入必需工具
-$Script:ToolsToInstall = @('git', 'python312', 'nodejs-lts')
+# 支持 -IncludeCcSwitch 参数将 cc-switch 加入必需工具
+# 使用 uv 替代 python312，添加 Claude Code npm 安装
+$Script:ToolsToInstall = @('git', 'uv', 'nodejs-lts')
+# Claude Code 通过 npm 全局安装，不在 scoop 工具列表中
+$Script:NpmGlobalTools = @('@anthropic-ai/claude')
 $Script:OptionalTools = @('cc-switch')
 
 # 如果指定了 IncludeCcSwitch，将 cc-switch 移入必需工具列表
@@ -292,24 +289,24 @@ function Show-WhatIfPreviewReport {
     Write-Host ""
 }
 
-#=================== AC 39-48: v2.2/v2.3 工具存在性检测 ===================
+#=================== 工具存在性检测 ===================
 
-# v2.3: 检测工具列表（包含 SkipScoopWhich 标记）
+# 检测工具列表（包含 SkipScoopWhich 标记）
 $Script:ToolChecks = @(
     @{ Name = "Git";       Command = "git";       VersionCmd = "git --version";       SkipScoopWhich = $false },
-    @{ Name = "Python";    Command = "python";    VersionCmd = "python --version";    SkipScoopWhich = $false },
+    @{ Name = "uv";        Command = "uv";        VersionCmd = "uv --version";        SkipScoopWhich = $false },
     @{ Name = "Node.js";   Command = "node";      VersionCmd = "node --version";      SkipScoopWhich = $false },
     @{ Name = "Scoop";     Command = "scoop";     VersionCmd = "scoop --version";     SkipScoopWhich = $false },
     @{ Name = "cc-switch"; Command = "cc-switch"; VersionCmd = "cc-switch version";   SkipScoopWhich = $true }
 )
 
-# v2.3: 检测 Scoop 是否可用
+# 检测 Scoop 是否可用
 function Test-ScoopAvailable {
     $scoopCmd = Get-Command "scoop" -ErrorAction SilentlyContinue
     return $null -ne $scoopCmd
 }
 
-# v2.3: 使用 scoop which 检测工具
+# 使用 scoop which 检测工具
 function Test-ToolWithScoopWhich {
     param([string]$ToolName)
 
@@ -330,7 +327,7 @@ function Test-ToolWithScoopWhich {
     return @{ Exists = $false }
 }
 
-# v2.3.1: 使用 scoop list 检测工具是否安装（scoop which 失败的备选方案）
+# 使用 scoop list 检测工具是否安装（scoop which 失败的备选方案）
 function Test-ToolWithScoopList {
     param([string]$ToolName)
 
@@ -350,7 +347,7 @@ function Test-ToolWithScoopList {
     return @{ Exists = $false }
 }
 
-# v2.3.1: 检查 Scoop shim 文件是否存在
+# 检查 Scoop shim 文件是否存在
 function Test-ToolWithScoopShim {
     param([string]$ToolName)
 
@@ -380,7 +377,7 @@ function Test-ToolWithScoopShim {
     return @{ Exists = $false }
 }
 
-# v2.3: 命令检测（Get-Command + 执行版本）
+# 命令检测（Get-Command + 执行版本）
 function Test-ToolWithCommand {
     param(
         [string]$Command,
@@ -417,7 +414,7 @@ function Test-ToolWithCommand {
     }
 }
 
-# v2.3: 路径检测（兜底）
+# 路径检测（兜底）
 function Test-ToolWithPath {
     param([string]$ToolName)
 
@@ -428,10 +425,10 @@ function Test-ToolWithPath {
             "C:\Program Files\Git\cmd\git.exe",
             "C:\Program Files (x86)\Git\cmd\git.exe"
         )
-        "Python" = @(
-            "$env:USERPROFILE\scoop\apps\python312\current\python.exe",
-            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
-            "C:\Python312\python.exe"
+        "uv" = @(
+            "$env:USERPROFILE\scoop\apps\uv\current\uv.exe",
+            "$env:LOCALAPPDATA\Programs\uv\uv.exe",
+            "$env:USERPROFILE\.local\bin\uv.exe"
         )
         "Node.js" = @(
             "$env:USERPROFILE\scoop\apps\nodejs-lts\current\node.exe",
@@ -459,7 +456,7 @@ function Test-ToolWithPath {
     return @{ Exists = $false }
 }
 
-# v2.3.1: 综合工具检测函数（优先级增强版：scoop which > scoop list > shim > 命令检测 > 路径检测）
+# 综合工具检测函数（优先级增强版：scoop which > scoop list > shim > 命令检测 > 路径检测）
 function Test-ToolExists {
     param(
         [string]$Name,
@@ -478,7 +475,7 @@ function Test-ToolExists {
             return $scoopWhichResult
         }
 
-        # v2.3.1: scoop which 失败时，尝试 scoop list 作为备选
+        # scoop which 失败时，尝试 scoop list 作为备选
         Write-VerboseLog "  → scoop which 失败，尝试 scoop list..."
         $scoopListResult = Test-ToolWithScoopList -ToolName $Command
         if ($scoopListResult.Exists) {
@@ -486,7 +483,7 @@ function Test-ToolExists {
             return $scoopListResult
         }
 
-        # v2.3.1: 尝试 shim 文件检测
+        # 尝试 shim 文件检测
         Write-VerboseLog "  → scoop list 失败，尝试 shim 文件检测..."
         $shimResult = Test-ToolWithScoopShim -ToolName $Command
         if ($shimResult.Exists) {
@@ -509,7 +506,7 @@ function Test-ToolExists {
         return $pathResult
     }
 
-    # v2.3.1: 最后尝试 - 检查 Scoop 应用目录是否存在
+    # 最后尝试 - 检查 Scoop 应用目录是否存在
     if (Test-ScoopAvailable) {
         $scoopPath = $env:SCOOP
         if (-not $scoopPath) { $scoopPath = "$env:USERPROFILE\scoop" }
@@ -535,9 +532,9 @@ function Test-ToolExists {
     }
 }
 
-# v2.3.1: 批量工具检测
+# 批量工具检测
 function Test-AllTools {
-    Write-Host "`n=== 工具存在性检测 (v2.3.1 改进) ===" -ForegroundColor Cyan
+    Write-Host "`n=== 工具存在性检测 ===" -ForegroundColor Cyan
     Write-Host "检测策略: scoop which > scoop list > shim > 命令检测 > 路径检测" -ForegroundColor Gray
     Write-Host ""
 
@@ -964,8 +961,8 @@ function Install-Tools {
 
         # 检查工具是否已安装
         $toolCommand = $tool
-        # 特殊处理：python312 的命令是 python
-        if ($tool -eq 'python312') { $toolCommand = 'python' }
+        # 特殊处理：uv 和 nodejs-lts 的命令名
+        if ($tool -eq 'uv') { $toolCommand = 'uv' }
         if ($tool -eq 'nodejs-lts') { $toolCommand = 'node' }
 
         if (Get-Command $toolCommand -ErrorAction SilentlyContinue) {
@@ -1090,14 +1087,86 @@ function Set-EnvironmentVariables {
     return $true
 }
 
-#=================== AC 15: SuperClaude 安装 ===================
+#=================== Claude Code npm 安装 ===================
+
+function Install-ClaudeCode {
+    param([string]$InstallPath)
+
+    Write-Header "Step 6.5: 安装 Claude Code"
+
+    Write-Step "检查 Claude Code 是否已安装..."
+
+    # 检查是否已安装
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        try {
+            $version = claude --version 2>&1 | Out-String
+            if ($version) {
+                Write-Success "Claude Code 已安装 - $version"
+                return $true
+            }
+        } catch {
+            Write-Success "Claude Code 已安装"
+            return $true
+        }
+    }
+
+    # 检查 npm 是否可用
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Error "npm 不可用，无法安装 Claude Code"
+        Write-Host "  请确保 Node.js 已正确安装" -ForegroundColor Cyan
+        return $false
+    }
+
+    if (Test-WhatIfMode) {
+        Write-Host "    [WHATIF] npm install -g @anthropic-ai/claude" -ForegroundColor DarkGray
+        return $true
+    }
+
+    try {
+        Write-Step "通过 npm 全局安装 Claude Code..."
+
+        # 使用 npm 全局安装
+        $npmInstallScript = {
+            $ErrorActionPreference = 'Continue'
+            npm install -g @anthropic-ai/claude 2>&1
+            return $LASTEXITCODE
+        }.GetNewClosure()
+
+        $result = Invoke-RetryCommand -ScriptBlock $npmInstallScript -Description "Claude Code 安装" -MaxRetries 3
+
+        if ($result -ne $null -or (Get-Command claude -ErrorAction SilentlyContinue)) {
+            try {
+                $version = claude --version 2>&1 | Out-String
+                if ($version) {
+                    Write-Success "Claude Code 安装完成 - $version"
+                } else {
+                    Write-Success "Claude Code 安装完成"
+                }
+                return $true
+            } catch {
+                Write-Success "Claude Code 安装完成"
+                return $true
+            }
+        } else {
+            Write-Warning "Claude Code 安装失败，但可继续"
+            Write-Host "  可手动运行: npm install -g @anthropic-ai/claude" -ForegroundColor Cyan
+            return $true  # 不阻断安装流程
+        }
+    } catch {
+        Write-Warning "Claude Code 安装失败: $_"
+        Write-Host "可手动安装或稍后重试" -ForegroundColor Cyan
+        return $true  # 失败可继续
+    }
+}
+
+#=================== SuperClaude 安装 ===================
+# 使用 uv 进行环境初始化
 
 function Install-SuperClaude {
     param([string]$InstallPath)
 
-    # AC 15: SuperClaude 自动安装
-    # AC 26: SuperClaude 失败可继续
-    # AC 38: -SkipSuperClaude 正常工作
+    # 自动安装
+    # 失败可继续
 
     if ($SkipSuperClaude) {
         Write-Warning "跳过 SuperClaude 安装 (用户指定)"
@@ -1106,9 +1175,8 @@ function Install-SuperClaude {
 
     Write-Header "Step 7: 安装 SuperClaude (可选)"
 
-    Write-Step "正在克隆 SuperClaude 框架..."
-
-    $superClaudePath = "$InstallPath\SuperClaude_Framework"
+    # 安装到用户目录
+    $superClaudePath = "$env:USERPROFILE\SuperClaude_Framework"
 
     if (Test-Path $superClaudePath) {
         Write-Success "SuperClaude 已存在"
@@ -1117,29 +1185,68 @@ function Install-SuperClaude {
 
     if (Test-WhatIfMode) {
         Write-Host "    [WHATIF] git clone SuperClaude 到 $superClaudePath" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] uv pip install -e $superClaudePath" -ForegroundColor DarkGray
         return $true
     }
 
     try {
-        # AC 15: 确保 git 可用后再克隆（SuperClaude 依赖 git）
+        # 确保 git 可用后再克隆
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
             Write-Error "Git 命令不可用，SuperClaude 安装失败"
             Write-Host "  请确保 Git 已正确安装后再尝试安装 SuperClaude" -ForegroundColor Cyan
             return $false
         }
 
-        # 尝试克隆
+        # 确保 uv 可用
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+            Write-Warning "uv 不可用，无法完成 SuperClaude 环境初始化"
+            Write-Host "  请确保 uv 已正确安装" -ForegroundColor Cyan
+            return $false
+        }
+
+        # 克隆仓库
+        Write-Step "克隆 SuperClaude 框架..."
         $repoUrl = "https://github.com/SuperClaude-Org/SuperClaude_Framework.git"
         git clone $repoUrl $superClaudePath 2>&1
 
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "SuperClaude 安装完成"
-            return $true
-        } else {
-            Write-Warning "SuperClaude 安装失败，但可继续"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "SuperClaude 克隆失败，但可继续"
             Write-Host "  可手动运行: git clone $repoUrl $superClaudePath" -ForegroundColor Cyan
-            return $true  # 不算错误
+            return $true
         }
+
+        # 使用 uv 进行环境初始化
+        Write-Step "使用 uv 初始化 SuperClaude 环境..."
+
+        # 检查是否有 pyproject.toml 或 requirements
+        $pyprojectPath = Join-Path $superClaudePath "pyproject.toml"
+        $requirementsPath = Join-Path $superClaudePath "requirements.txt"
+
+        if (Test-Path $pyprojectPath) {
+            # 使用 uv pip install -e 安装
+            Write-VerboseLog "检测到 pyproject.toml，使用 uv pip install -e"
+            $uvInstallResult = uv pip install -e $superClaudePath --system 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "SuperClaude 环境初始化完成"
+            } else {
+                Write-Warning "SuperClaude uv 安装部分失败: $uvInstallResult"
+            }
+        } elseif (Test-Path $requirementsPath) {
+            # 使用 requirements.txt 安装
+            Write-VerboseLog "检测到 requirements.txt，使用 uv pip install -r"
+            $uvInstallResult = uv pip install -r $requirementsPath --system 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "SuperClaude 环境初始化完成"
+            } else {
+                Write-Warning "SuperClaude uv 安装部分失败: $uvInstallResult"
+            }
+        } else {
+            Write-VerboseLog "未检测到依赖文件，跳过 uv 安装"
+        }
+
+        Write-Success "SuperClaude 安装完成"
+        return $true
+
     } catch {
         Write-Warning "SuperClaude 安装失败: $_"
         Write-Host "可手动安装或稍后重试" -ForegroundColor Cyan
@@ -1357,7 +1464,7 @@ function Confirm-Uninstall {
 
     Write-Host ""
     Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "║       Claude Code 开发环境卸载程序 v2.3                  ║" -ForegroundColor Red
+    Write-Host "║       Claude Code 开发环境卸载程序                        ║" -ForegroundColor Red
     Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Red
     Write-Host ""
 
@@ -1483,7 +1590,7 @@ function Complete-Uninstall {
 function Start-Uninstall {
     Write-Host ""
     Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "║       Claude Code 开发环境卸载程序 v2.3                  ║" -ForegroundColor Red
+    Write-Host "║       Claude Code 开发环境卸载程序                        ║" -ForegroundColor Red
     Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Red
     Write-Host ""
 
@@ -1590,7 +1697,7 @@ function Complete-Installation {
     Write-Step "验证工具可用性..."
     $allToolsOk = $true
 
-    # v2.3.4: 使用 scoop list 验证 scoop 安装的工具（与安装步骤保持一致）
+    # 使用 scoop list 验证 scoop 安装的工具
     # 获取 scoop list 输出用于查找版本信息
     $scoopListOutput = $null
     if (Get-Command scoop -ErrorAction SilentlyContinue) {
@@ -1598,11 +1705,10 @@ function Complete-Installation {
     }
 
     # 验证工具列表 - 使用 scoop 包名
-    # v2.3.8: PowerShell 5.1 兼容，键名必须用引号包裹
-    # 注意: Name 使用小写，以便与 coreToolsOk 检查兼容
+    # PowerShell 5.1 兼容，键名必须用引号包裹
     $toolsToVerifyMap = @{}
     $toolsToVerifyMap['git'] = @{Name = 'git';       Package = 'git';       Command = 'git';       InstalledByScoop = $true }
-    $toolsToVerifyMap['python312'] = @{Name = 'python'; Package = 'python312'; Command = 'python'; InstalledByScoop = $true }
+    $toolsToVerifyMap['uv'] = @{Name = 'uv';         Package = 'uv';         Command = 'uv';         InstalledByScoop = $true }
     $toolsToVerifyMap['nodejs-lts'] = @{Name = 'node'; Package = 'nodejs-lts'; Command = 'node'; InstalledByScoop = $true }
     $toolsToVerifyMap['scoop'] = @{Name = 'scoop';   Package = 'scoop';    Command = 'scoop';    InstalledByScoop = $false }
 
@@ -1620,7 +1726,7 @@ function Complete-Installation {
         $displayName = $tool.Name
         $commandName = $tool.Command
 
-        # v2.3.8: 先尝试 scoop list 验证 scoop 安装的工具
+        # 先尝试 scoop list 验证 scoop 安装的工具
         $foundViaScoopList = $false
         if ($tool.InstalledByScoop -and $scoopListOutput) {
             $lines = $scoopListOutput -split "`n"
@@ -1636,7 +1742,7 @@ function Complete-Installation {
                     $idx = $line.IndexOf($packageName)
                     if ($idx -ge 0) {
                         $rest = $line.Substring($idx + $packageName.Length).Trim()
-                        # 提取版本号（数字开头，到空格或 [ 结束）
+                        # 提取版本号（数字开头）
                         if ($rest -match '^([0-9][^\s\[]*)') {
                             $version = $matches[1]
                         }
@@ -1657,7 +1763,7 @@ function Complete-Installation {
 
         if ($foundViaScoopList) { continue }
 
-        # v2.3.8: scoop list 验证失败，使用命令检测作为兜底
+        # scoop list 验证失败，使用命令检测作为兜底
         $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
         if ($cmd) {
             try {
@@ -1687,16 +1793,35 @@ function Complete-Installation {
         }
     }
 
-    # v2.3.8: 显示验证统计（scoop list + 命令兜底）
+    # 显示验证统计（scoop list + 命令兜底）
     Write-Host ""
     Write-Host "验证统计: $verifiedCount/$totalCount 个工具可用" -ForegroundColor $(if ($verifiedCount -eq $totalCount) { 'Green' } else { 'Yellow' })
 
+    # 验证 Claude Code
+    Write-Step "验证 Claude Code..."
+    $claudeVerified = $false
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        try {
+            $claudeVersion = claude --version 2>&1 | Out-String
+            if ($claudeVersion) {
+                Write-Success "Claude Code 可用 - $claudeVersion"
+                $claudeVerified = $true
+                $verifiedTools['claude'] = $true
+            }
+        } catch {
+            Write-Success "Claude Code 可用"
+            $claudeVerified = $true
+            $verifiedTools['claude'] = $true
+        }
+    } else {
+        Write-Warning "Claude Code 未安装或不可用"
+        Write-Host "  可运行: npm install -g @anthropic-ai/claude" -ForegroundColor Cyan
+    }
+
     # 检查核心工具是否至少有一个可用
-    $coreToolsOk = $verifiedTools.ContainsKey('git') -and (
-        $verifiedTools.ContainsKey('python') -or $verifiedTools.ContainsKey('python312')
-    ) -and (
+    $coreToolsOk = $verifiedTools.ContainsKey('git') -and $verifiedTools.ContainsKey('uv') -and (
         $verifiedTools.ContainsKey('node') -or $verifiedTools.ContainsKey('nodejs-lts')
-    )
+    ) -and $claudeVerified
 
     if (-not $coreToolsOk) {
         Write-Warning "部分核心工具不可用"
@@ -1757,9 +1882,9 @@ function Initialize-SignalHandler {
 function Start-Installation {
     Write-Host ""
     Write-Host "╔════════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║       Claude Code Windows 一键安装器 v2.3.8                      ║" -ForegroundColor Cyan
+    Write-Host "║       Claude Code Windows 一键安装器 v1.0.0                      ║" -ForegroundColor Cyan
     Write-Host "║       Author: SmartDDD Lab                                      ║" -ForegroundColor Cyan
-    Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "╚════════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
 
     # AC 30: WhatIf 模式
@@ -1826,11 +1951,15 @@ function Start-Installation {
         $bashPathForEnv = $bashPath  # 保存供外部使用
         $null = Set-EnvironmentVariables -BashPath $bashPath -InstallPath $installPath
 
-        # 三审修复: 确保当前会话环境变量在函数返回后仍生效 (解决 AC 7 & AC 22 失效问题)
+        # 确保当前会话环境变量在函数返回后仍生效
         $bashPathFinal = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
         $env:SHELL = $bashPathFinal
         $env:CLAUDE_CODE_GIT_BASH_PATH = $bashPathFinal
         $env:CLAUDE_INSTALL_DIR = "$env:USERPROFILE\scoop"
+
+        # Step 6.5: Claude Code (通过 npm 全局安装，必须在 SuperClaude 之前)
+        Test-CancellationRequested
+        $null = Install-ClaudeCode -InstallPath ""
 
         # Step 7: SuperClaude (安装到用户目录)
         Test-CancellationRequested

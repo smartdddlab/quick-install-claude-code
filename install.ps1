@@ -18,24 +18,34 @@ param(
 # 从环境变量读取远程参数（irm | iex 场景）
 if (-not $InstallDrive -and $env:CLAUDE_INSTALL_DRIVE) {
     $InstallDrive = $env:CLAUDE_INSTALL_DRIVE
-    Write-VerboseLog "使用环境变量 CLAUDE_INSTALL_DRIVE: $InstallDrive"
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_INSTALL_DRIVE: $InstallDrive" -ForegroundColor Gray
+    }
 }
 if (-not $SkipSuperClaude -and $env:CLAUDE_SKIP_SUPERCLAUDE) {
     $SkipSuperClaude = $true
-    Write-VerboseLog "使用环境变量 CLAUDE_SKIP_SUPERCLAUDE: true"
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_SKIP_SUPERCLAUDE: true" -ForegroundColor Gray
+    }
 }
 if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
     $IncludeCcSwitch = $true
-    Write-VerboseLog "使用环境变量 CLAUDE_INCLUDE_CC_SWITCH: true"
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_INCLUDE_CC_SWITCH: true" -ForegroundColor Gray
+    }
 }
 if (-not $UseChinaMirror -and $env:CLAUDE_USE_CHINA_MIRROR -eq '1') {
     $UseChinaMirror = $true
-    Write-VerboseLog "使用环境变量 CLAUDE_USE_CHINA_MIRROR: true"
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_USE_CHINA_MIRROR: true" -ForegroundColor Gray
+    }
 }
 # 默认启用国内镜像
 if (-not $PSBoundParameters.ContainsKey('UseChinaMirror') -and -not $env:CLAUDE_USE_CHINA_MIRROR) {
     $UseChinaMirror = $true
-    Write-VerboseLog "默认启用国内镜像"
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] 默认启用国内镜像" -ForegroundColor Gray
+    }
 }
 
 <#
@@ -113,7 +123,9 @@ $Script:OptionalTools = @('cc-switch')
 if ($IncludeCcSwitch) {
     $Script:OptionalTools = @()
     $Script:ToolsToInstall += @('cc-switch')
-    Write-VerboseLog "cc-switch 已加入必需工具列表"
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] cc-switch 已加入必需工具列表" -ForegroundColor Gray
+    }
 }
 
 #=================== 辅助函数 ===================
@@ -1575,13 +1587,6 @@ function Write-Error {
     param([string]$Message)
     Write-Host "[X] $Message" -ForegroundColor Red
     $Script:FailedItems += $Message
-}
-
-function Write-VerboseLog {
-    param([string]$Message)
-    if ($Verbose -or $VerbosePreference -ne 'SilentlyContinue') {
-        Write-Host "    [VERBOSE] $Message" -ForegroundColor Gray
-    }
 }
 
 #=================== 并发检测和中断处理 ===================

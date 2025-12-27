@@ -1015,9 +1015,13 @@ function Install-Scoop {
     # 用户级安装使用默认目录
     $scoopDir = "$env:USERPROFILE\scoop"
 
-    # 如果已存在 Scoop，跳过（先检查变量是否为空）
+    # 如果已存在 Scoop，跳过安装但仍配置镜像
     if ($env:SCOOP -and (Test-Path $env:SCOOP)) {
         Write-Success "Scoop 已存在"
+        # 已存在时也配置国内镜像（确保镜像设置生效）
+        if ($UseChinaMirror) {
+            Configure-ScoopChinaMirror
+        }
         return
     }
 
@@ -1061,7 +1065,7 @@ function Install-Scoop {
     if ($scoopInstalled) {
         Write-Success "Scoop 安装完成"
 
-        # 配置国内镜像（如果启用）
+        # 配置国内镜像（如果启用）- 在安装完成后立即配置
         if ($UseChinaMirror) {
             Configure-ScoopChinaMirror
         }

@@ -873,49 +873,52 @@ function Test-And-InstallGitBash {
         if ($scoopListOutput -match 'git\s') {
             Write-Host "  Git 已在 Scoop 中，跳过安装..." -ForegroundColor Gray
         } else {
-            # 使用更长的超时和重试（Git 下载较大，需要更多时间）
-            $installGitScript = {
-                $ErrorActionPreference = 'Continue'
-                # 使用 --skip-update 参数跳过 Scoop 更新
-                scoop install --skip-update git 2>&1
-                return $LASTEXITCODE
-            }.GetNewClosure()
+            # 直接执行安装命令，等待完成
+            Write-Host "  正在下载并安装 Git (可能需要几分钟)..." -ForegroundColor Gray
 
-            # Git 较大，需要更多重试次数和更长的等待时间
-            Write-Host "  Git 较大，下载可能需要几分钟..." -ForegroundColor Gray
-            $result = Invoke-RetryCommand -ScriptBlock $installGitScript -Description "Git 安装" -MaxRetries 6 -RetryDelay 10 -LongOperation $true
-        }
+            try {
+                # 直接执行，不使用管道，以正确获取退出码
+                $installOutput = scoop install --skip-update git 2>&1
+                $installExitCode = $LASTEXITCODE
 
-        $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
+                # 记录输出用于调试
+                if ($VerbosePreference -ne 'SilentlyContinue') {
+                    $installOutput | ForEach-Object { Write-VerboseLog "  [scoop] $_" }
+                }
 
-        # 即使安装命令返回失败，也检查是否实际已安装
-        if ($null -eq $result -or $LASTEXITCODE -ne 0) {
+                if ($installExitCode -eq 0) {
+                    Write-Success "Git 安装完成"
+                } else {
+                    Write-Warning "Git 安装返回退出码: $installExitCode"
+                }
+            } catch {
+                Write-VerboseLog "Git 安装异常: $_"
+                $installExitCode = 1
+            }
+
+            # 验证安装结果
+            $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
+
             if (Test-Path $bashPath) {
-                Write-Host "  Git Bash 文件已存在，尝试验证..." -ForegroundColor Gray
-                try {
-                    $testResult = & "$bashPath" --version 2>&1
-                    if ($testResult) {
-                        Write-Success "Git Bash 验证成功: $testResult"
-                        return $bashPath
+                Write-Success "Git Bash 已就绪"
+            } else {
+                # 最后尝试：检查 scoop apps 目录
+                $gitAppPath = "$env:USERPROFILE\scoop\apps\git"
+                if (Test-Path $gitAppPath) {
+                    $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
+                    if (Test-Path $bashPath) {
+                        Write-Success "Git Bash 已就绪"
+                    } else {
+                        Write-Error "Git 安装失败: Git Bash 文件未找到"
+                        return $null
                     }
-                } catch {
-                    Write-VerboseLog "Git Bash 验证失败: $_"
+                } else {
+                    Write-Error "Git 安装失败: 目录未创建"
+                    Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
+                    return $null
                 }
             }
-
-            # 最后尝试：检查 scoop apps 目录
-            $gitAppPath = "$env:USERPROFILE\scoop\apps\git"
-            if (Test-Path $gitAppPath) {
-                Write-Success "Git 已安装（通过目录验证）"
-                return $bashPath
-            }
-
-            Write-Error "Git 安装失败"
-            Write-Host "  可能原因: 网络问题或下载时间过长" -ForegroundColor Cyan
-            Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
-            return $null
         }
-    }
 
     # AC 5: 验证 Git Bash 安装后可用
     # AC 21: Given Git Bash 安装完成，When 验证，Then bash.exe 可正常执行
@@ -1073,30 +1076,33 @@ function Install-Tools {
 
         Test-CancellationRequested
 
-        # 跳过 Scoop 更新，直接安装（更新失败不影响安装）
-        # 增大超时时间（工具下载可能需要更长时间）
-        $installToolScript = {
-            $ErrorActionPreference = 'Continue'
-            scoop install --skip-update $tool 2>&1
-            return $LASTEXITCODE
-        }.GetNewClosure()
+        # 直接执行安装命令，等待完成
+        Write-Host "  正在下载并安装 $tool (可能需要几分钟)..." -ForegroundColor Gray
 
-        # 使用更长的重试参数，并提示用户
-        Write-Host "  下载可能需要几分钟..." -ForegroundColor Gray
-        $result = Invoke-RetryCommand -ScriptBlock $installToolScript -Description "$tool 安装" -MaxRetries 5 -RetryDelay 8 -LongOperation $true
+        try {
+            $installOutput = scoop install --skip-update $tool 2>&1
+            $installExitCode = $LASTEXITCODE
 
-        if ($null -ne $result) {
-            # 获取安装的版本信息
-            $version = & $toolCommand --version 2>&1 | Select-Object -First 1
-            Write-Success "$tool 安装完成 - $version"
-        } else {
-            # 即使失败也检查目录是否存在
-            $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
-            if (Test-Path $toolAppPath) {
-                Write-Success "$tool 已安装（通过目录验证）"
-            } else {
-                Write-Error "$tool 安装失败"
+            if ($VerbosePreference -ne 'SilentlyContinue') {
+                $installOutput | ForEach-Object { Write-VerboseLog "  [scoop] $_" }
             }
+
+            if ($installExitCode -eq 0) {
+                Write-Success "$tool 安装完成"
+            } else {
+                Write-Warning "$tool 安装返回退出码: $installExitCode"
+            }
+        } catch {
+            Write-VerboseLog "$tool 安装异常: $_"
+            $installExitCode = 1
+        }
+
+        # 验证安装结果
+        $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
+        if (Test-Path $toolAppPath) {
+            Write-Success "$tool 已安装"
+        } else {
+            Write-Error "$tool 安装失败: 目录未创建"
         }
     }
 

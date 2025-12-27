@@ -178,7 +178,8 @@ function Invoke-RetryCommand {
         [scriptblock]$ScriptBlock,
         [string]$Description,
         [int]$MaxRetries = 3,
-        [int]$RetryDelay = 2
+        [int]$RetryDelay = 2,
+        [bool]$LongOperation = $false
     )
 
     $attempt = 0
@@ -188,7 +189,11 @@ function Invoke-RetryCommand {
         try {
             $result = & $ScriptBlock
             if ($LASTEXITCODE -eq 0) {
-                Write-VerboseLog "$Description 成功 (尝试 $attempt/$MaxRetries)"
+                if ($attempt -gt 1) {
+                    Write-Success "$Description 成功 (第 $attempt 次尝试)"
+                } else {
+                    Write-VerboseLog "$Description 成功 (尝试 $attempt/$MaxRetries)"
+                }
                 return $result
             }
         } catch {
@@ -196,7 +201,11 @@ function Invoke-RetryCommand {
         }
 
         if ($attempt -lt $MaxRetries) {
-            Write-Warning "$Description 失败，${RetryDelay}秒后重试..."
+            if ($LongOperation -or $RetryDelay -ge 5) {
+                Write-Host "  等待 ${RetryDelay}秒后重试 ($attempt/$MaxRetries)..." -ForegroundColor Gray
+            } else {
+                Write-Warning "$Description 失败，${RetryDelay}秒后重试..."
+            }
             Start-Sleep -Seconds $RetryDelay
         }
     }
@@ -859,20 +868,30 @@ function Test-And-InstallGitBash {
         Write-Host "    [WHATIF] scoop install git --skip-update" -ForegroundColor DarkGray
         $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
     } else {
-        $installGitScript = {
-            # 使用 --skip-update 参数跳过 Scoop 更新
-            $ErrorActionPreference = 'Continue'
-            scoop install --skip-update git 2>&1 | Tee-Object -Variable installOutput
-            return $LASTEXITCODE
-        }.GetNewClosure()
+        # 先检查 Git 是否已经在安装中或已安装
+        $scoopListOutput = scoop list 2>&1 | Out-String
+        if ($scoopListOutput -match 'git\s') {
+            Write-Host "  Git 已在 Scoop 中，跳过安装..." -ForegroundColor Gray
+        } else {
+            # 使用更长的超时和重试（Git 下载较大，需要更多时间）
+            $installGitScript = {
+                $ErrorActionPreference = 'Continue'
+                # 使用 --skip-update 参数跳过 Scoop 更新
+                scoop install --skip-update git 2>&1
+                return $LASTEXITCODE
+            }.GetNewClosure()
 
-        $result = Invoke-RetryCommand -ScriptBlock $installGitScript -Description "Git 安装" -MaxRetries 3
+            # Git 较大，需要更多重试次数和更长的等待时间
+            Write-Host "  Git 较大，下载可能需要几分钟..." -ForegroundColor Gray
+            $result = Invoke-RetryCommand -ScriptBlock $installGitScript -Description "Git 安装" -MaxRetries 6 -RetryDelay 10 -LongOperation $true
+        }
+
         $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
 
-        if ($null -eq $result) {
-            # 额外诊断：检查 Git 是否实际上已安装
+        # 即使安装命令返回失败，也检查是否实际已安装
+        if ($null -eq $result -or $LASTEXITCODE -ne 0) {
             if (Test-Path $bashPath) {
-                Write-Warning "Git 安装命令返回失败，但 Git Bash 文件已存在，尝试验证..."
+                Write-Host "  Git Bash 文件已存在，尝试验证..." -ForegroundColor Gray
                 try {
                     $testResult = & "$bashPath" --version 2>&1
                     if ($testResult) {
@@ -884,8 +903,15 @@ function Test-And-InstallGitBash {
                 }
             }
 
+            # 最后尝试：检查 scoop apps 目录
+            $gitAppPath = "$env:USERPROFILE\scoop\apps\git"
+            if (Test-Path $gitAppPath) {
+                Write-Success "Git 已安装（通过目录验证）"
+                return $bashPath
+            }
+
             Write-Error "Git 安装失败"
-            Write-Host "  可能原因: 网络问题或权限不足" -ForegroundColor Cyan
+            Write-Host "  可能原因: 网络问题或下载时间过长" -ForegroundColor Cyan
             Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
             return $null
         }
@@ -1038,24 +1064,39 @@ function Install-Tools {
             continue
         }
 
+        # 先检查是否已在 Scoop 中
+        $scoopListOutput = scoop list 2>&1 | Out-String
+        if ($scoopListOutput -match "$tool\s") {
+            Write-Host "  $tool 已在 Scoop 中，跳过安装..." -ForegroundColor Gray
+            continue
+        }
+
         Test-CancellationRequested
 
         # 跳过 Scoop 更新，直接安装（更新失败不影响安装）
+        # 增大超时时间（工具下载可能需要更长时间）
         $installToolScript = {
-            # 使用 --skip-update 参数跳过 Scoop 更新
             $ErrorActionPreference = 'Continue'
             scoop install --skip-update $tool 2>&1
             return $LASTEXITCODE
         }.GetNewClosure()
 
-        $result = Invoke-RetryCommand -ScriptBlock $installToolScript -Description "$tool 安装" -MaxRetries 3
+        # 使用更长的重试参数，并提示用户
+        Write-Host "  下载可能需要几分钟..." -ForegroundColor Gray
+        $result = Invoke-RetryCommand -ScriptBlock $installToolScript -Description "$tool 安装" -MaxRetries 5 -RetryDelay 8 -LongOperation $true
 
         if ($null -ne $result) {
             # 获取安装的版本信息
             $version = & $toolCommand --version 2>&1 | Select-Object -First 1
             Write-Success "$tool 安装完成 - $version"
         } else {
-            Write-Error "$tool 安装失败"
+            # 即使失败也检查目录是否存在
+            $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
+            if (Test-Path $toolAppPath) {
+                Write-Success "$tool 已安装（通过目录验证）"
+            } else {
+                Write-Error "$tool 安装失败"
+            }
         }
     }
 

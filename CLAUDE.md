@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Claude Code Windows 一键安装器** - a PowerShell script that automates installation and configuration of Claude Code development environment on Windows.
+This is a **Claude Code 多平台一键安装器** - Scripts that automate installation and configuration of Claude Code development environment on Windows, Linux, and macOS.
 
 ## Commands
 
+### Windows (PowerShell)
 ```powershell
 # Test script with WhatIf mode (preview only, no actual installation)
 .\install.ps1 -WhatIf -Verbose
@@ -18,29 +19,39 @@ This is a **Claude Code Windows 一键安装器** - a PowerShell script that aut
 # Skip SuperClaude installation
 .\install.ps1 -SkipSuperClaude
 
-# Skip China mirror (use default scoop repos)
-.\install.ps1 -UseChinaMirror:$false
-
 # Remote installation from GitHub
 irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 
-# Remote installation with parameters (use environment variables)
+# Remote installation with parameters
 $env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
-
-# Skip China mirror via environment variable
-$env:CLAUDE_USE_CHINA_MIRROR="0"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 ```
 
-## Remote Installation Environment Variables
+### Linux/macOS (Bash)
+```bash
+# Standard installation (China mirror enabled by default)
+curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
 
-For `irm | iex` scenarios, parameters must be passed via environment variables:
+# Preview mode (dry run)
+DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
 
-| Environment Variable | Purpose | Example |
-|---------------------|---------|---------|
-| `CLAUDE_INSTALL_DRIVE` | Installation drive | `$env:CLAUDE_INSTALL_DRIVE="D"` |
-| `CLAUDE_SKIP_SUPERCLAUDE` | Skip SuperClaude | `$env:CLAUDE_SKIP_SUPERCLAUDE="1"` |
-| `CLAUDE_INCLUDE_CC_SWITCH` | Include cc-switch | `$env:CLAUDE_INCLUDE_CC_SWITCH="1"` |
-| `CLAUDE_USE_CHINA_MIRROR` | Use China mirror (1=enable, 0=disable) | `$env:CLAUDE_USE_CHINA_MIRROR="0"` |
+# Skip SuperClaude
+CLAUDE_SKIP_SUPERCLAUDE=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
+
+# Use official npm registry
+CLAUDE_USE_CHINA_MIRROR=0 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
+```
+
+## Environment Variables
+
+For remote installation scenarios, parameters must be passed via environment variables:
+
+| Variable | Platform | Purpose | Example |
+|----------|----------|---------|---------|
+| `CLAUDE_INSTALL_DRIVE` | Windows | Installation drive | `$env:CLAUDE_INSTALL_DRIVE="D"` |
+| `CLAUDE_SKIP_SUPERCLAUDE` | All | Skip SuperClaude | `CLAUDE_SKIP_SUPERCLAUDE=1` |
+| `CLAUDE_INCLUDE_CC_SWITCH` | Windows | Include cc-switch | `$env:CLAUDE_INCLUDE_CC_SWITCH="1"` |
+| `CLAUDE_USE_CHINA_MIRROR` | All | China mirror (1=enable, 0=disable) | `CLAUDE_USE_CHINA_MIRROR=0` |
+| `DRY_RUN` | Linux/macOS | Preview mode | `DRY_RUN=1` |
 
 ## Execution Policy Handling
 
@@ -56,7 +67,8 @@ If auto-setting fails, the script provides solutions:
 
 ## Architecture
 
-The `install.ps1` script is organized into functional steps:
+### install.ps1 (Windows)
+The PowerShell script is organized into functional steps:
 1. **Environment Detection** - PowerShell version >= 5.1, execution policy check
 2. **Drive Selection** - Selects installation drive and sets log file path to InstallDir
 3. **Tool Existence Detection** - Priority: scoop which > Get-Command > path detection
@@ -66,11 +78,26 @@ The `install.ps1` script is organized into functional steps:
 7. **Tool Installation** - Git, uv, Node.js LTS (skips if already installed)
 8. **Environment Variables** - Sets SHELL, CLAUDE_CODE_GIT_BASH_PATH
 9. **Claude Code Installation** - Installs via npm with Taobao mirror (China mode)
-10. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`), then runs `superclaude install` for initialization
+10. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`), then runs `superclaude install`
 11. **Verification** - Confirms all tools are available
 
+### install.sh (Linux/macOS)
+The Bash script is organized into functional steps:
+1. **Environment Detection** - Shell type (bash/zsh), dependency check (curl, git)
+2. **Dependency Check** - Auto-installs missing base packages via system package manager
+3. **Tool Existence Detection** - Checks nvm, uv, node, npm, claude availability
+4. **nvm Installation** - Installs Node Version Manager v0.40.3
+5. **uv Installation** - Installs uv Python package manager
+6. **Node.js Installation** - Installs LTS version via nvm
+7. **Python Installation** - Installs Python 3.12 via uv
+8. **npm Mirror Configuration** - Sets registry to npmmirror.com (China mode)
+9. **Claude Code Installation** - Installs via npm global
+10. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`)
+11. **Shell Configuration** - Writes nvm/uv settings to ~/.bashrc or ~/.zshrc
+
 ### Log File Location
-Log file is saved to `<InstallDrive>:\smartddd-claude-tools\install-<timestamp>.log`
+- **Windows**: `<InstallDrive>:\smartddd-claude-tools\install-<timestamp>.log`
+- **Linux/macOS**: No persistent log file; real-time console output only
 
 ## Key Features
 
@@ -80,32 +107,21 @@ When `-UseChinaMirror` is enabled (default), npm uses `https://registry.npmmirro
 ### SuperClaude Version Verification
 After SuperClaude installation, the script runs `superclaude --version` to verify the installation was successful.
 
-## Key Script Parameters
-
-| Parameter | Purpose |
-|-----------|---------|
-| `-WhatIf` | Preview mode, no actual installation |
-| `-Verbose` | Detailed logging output |
-| `-InstallDrive` | Specify installation drive (D/E/F/C) |
-| `-SkipSuperClaude` | Skip SuperClaude framework |
-| `-UseChinaMirror` | Use China Gitee mirror (default: enabled) |
-| `-IncludeCcSwitch` | Include cc-switch tool |
-
-## GitHub Actions
-
-The `.github/workflows/test-windows.yml` validates script execution on Windows runners:
-- PowerShell syntax validation
-- WhatIf mode execution test
-- Function and parameter verification
+### Dry Run Mode (Linux/macOS)
+The `install.sh` script supports `DRY_RUN=1` mode that shows all commands without executing them.
 
 ## Dependencies Installed
 
-- Git (with Git Bash)
-- uv (Python package manager)
-- Node.js 20.x LTS
-- Claude Code CLI (via npm with Taobao mirror)
-- SuperClaude Framework (optional, via npm `@bifrost_inc/superclaude`, with version verification)
-- cc-switch (optional, via `-IncludeCcSwitch`)
+| Tool | Windows | Linux/macOS |
+|------|---------|-------------|
+| Git | Scoop | System package manager |
+| uv | Scoop | `astral.sh/uv/install.sh` |
+| Node.js LTS | Scoop | nvm |
+| Python | - | uv |
+| Claude Code | npm (Taobao mirror) | npm (npmmirror.com) |
+| SuperClaude | npm | npm |
+| nvm | - | v0.40.3 |
+| cc-switch | Scoop (optional) | - |
 
 ## Version
 

@@ -1,0 +1,64 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+This is a **Claude Code Windows 一键安装器** - a PowerShell script that automates installation and configuration of Claude Code development environment on Windows.
+
+## Commands
+
+```powershell
+# Test script with WhatIf mode (preview only, no actual installation)
+.\install.ps1 -WhatIf -Verbose
+
+# Install to specific drive
+.\install.ps1 -InstallDrive D
+
+# Skip SuperClaude installation
+.\install.ps1 -SkipSuperClaude
+
+# Remote installation from GitHub
+irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
+```
+
+## Architecture
+
+The `install.ps1` script is organized into functional steps:
+1. **Environment Detection** - PowerShell version >= 5.1, execution policy check
+2. **Tool Existence Detection** - Priority: scoop which > Get-Command > path detection
+3. **Git Bash Detection/Installation** - Auto-install via Scoop if missing
+4. **Network Testing** - GitHub accessibility check
+5. **Scoop Installation** - Package manager setup
+6. **Tool Installation** - Git, Python 3.12, Node.js LTS (skips if already installed)
+7. **Environment Variables** - Sets SHELL, CLAUDE_CODE_GIT_BASH_PATH
+8. **SuperClaude Installation** - Optional framework installation
+9. **Verification** - Confirms all tools are available
+
+## Key Script Parameters
+
+| Parameter | Purpose |
+|-----------|---------|
+| `-WhatIf` | Preview mode, no actual installation |
+| `-Verbose` | Detailed logging output |
+| `-InstallDrive` | Specify installation drive (D/E/F/C) |
+| `-SkipSuperClaude` | Skip SuperClaude framework |
+| `-SkipToolCheck` | Skip tool existence detection |
+
+## GitHub Actions
+
+The `.github/workflows/test-windows.yml` validates script execution on Windows runners:
+- PowerShell syntax validation
+- WhatIf mode execution test
+- Function and parameter verification
+
+## Dependencies Installed
+
+- Git (with Git Bash)
+- Python 3.12+
+- Node.js 20.x LTS
+- cc-switch (optional, via `-IncludeCcSwitch`)
+
+## Version
+
+Uses Semantic Versioning (SemVer) - current version: **v1.0.0**

@@ -876,27 +876,39 @@ function Test-And-InstallGitBash {
         if ($scoopListOutput -match 'git\s') {
             Write-Success "Git 已在 Scoop 中，跳过安装"
         } else {
-            # 先更新 bucket（解决可能的 manifest 问题）
-            Write-Host "  正在更新 Scoop bucket..." -ForegroundColor Gray
-            $bucketUpdateOutput = scoop update 2>&1
-            $bucketUpdateExitCode = $LASTEXITCODE
-            if ($bucketUpdateExitCode -ne 0) {
-                Write-VerboseLog "Bucket 更新返回: $bucketUpdateExitCode"
-            }
-
             # 直接执行安装命令，等待完成
             Write-Host "  正在下载并安装 Git (可能需要几分钟)..." -ForegroundColor Gray
 
             try {
-                # 直接执行，不使用管道，以正确获取退出码
-                $installOutput = scoop install --skip-update git 2>&1
-                $installExitCode = $LASTEXITCODE
-                $installOutputStr = $installOutput | Out-String
+                $installExitCode = 1
+                $outputLines = @()
+                $attempt = 0
 
-                # 总是显示安装输出（用于诊断问题）
-                if ($installOutputStr) {
-                    Write-VerboseLog "Scoop 安装输出:"
-                    $installOutput | ForEach-Object { Write-VerboseLog "  $_" }
+                # 第一次尝试使用 --no-scripts（跳过安装后脚本）
+                $installOutput = scoop install --skip-update --no-scripts git 2>&1
+                $installExitCode = $LASTEXITCODE
+
+                # 收集输出行
+                foreach ($line in $installOutput) {
+                    if ($null -ne $line -and $line -ne '') {
+                        $outputLines += $line.ToString()
+                        Write-VerboseLog "  [scoop] $line"
+                    }
+                }
+
+                # 如果失败，尝试不带 --no-scripts
+                if ($installExitCode -ne 0) {
+                    Write-Host "  第一次尝试失败，再次尝试..." -ForegroundColor Gray
+                    $installOutput = scoop install --skip-update git 2>&1
+                    $installExitCode = $LASTEXITCODE
+                    $outputLines = @()
+
+                    foreach ($line in $installOutput) {
+                        if ($null -ne $line -and $line -ne '') {
+                            $outputLines += $line.ToString()
+                            Write-VerboseLog "  [scoop] $line"
+                        }
+                    }
                 }
 
                 if ($installExitCode -eq 0) {
@@ -905,17 +917,11 @@ function Test-And-InstallGitBash {
                     Write-Warning "Git 安装失败 (退出码: $installExitCode)"
 
                     # 显示最后几行输出作为错误诊断
-                    $lines = $installOutputStr -split "`n" | Where-Object { $_ -match '\S' }
-                    if ($lines.Count -gt 3) {
-                        Write-Host "  错误信息 (最后几行):" -ForegroundColor Yellow
-                        $lastLines = $lines | Select-Object -Last 5
-                        foreach ($line in $lastLines) {
-                            Write-Host "    $line" -ForegroundColor Red
-                        }
-                    } elseif ($lines.Count -gt 0) {
+                    if ($outputLines.Count -gt 0) {
                         Write-Host "  错误信息:" -ForegroundColor Yellow
-                        foreach ($line in $lines) {
-                            Write-Host "    $line" -ForegroundColor Red
+                        $startIdx = [Math]::Max(0, $outputLines.Count - 5)
+                        for ($i = $startIdx; $i -lt $outputLines.Count; $i++) {
+                            Write-Host "    $($outputLines[$i])" -ForegroundColor Red
                         }
                     }
 
@@ -924,7 +930,6 @@ function Test-And-InstallGitBash {
                     Write-Host "  可能原因和解决方案:" -ForegroundColor Yellow
                     Write-Host "  1. 网络问题 - 检查网络连接后重试" -ForegroundColor Gray
                     Write-Host "  2. 运行: scoop install git" -ForegroundColor Cyan
-                    Write-Host "  3. 查看详细日志: scoop install git --verbose" -ForegroundColor Cyan
                 }
             } catch {
                 Write-VerboseLog "Git 安装异常: $_"

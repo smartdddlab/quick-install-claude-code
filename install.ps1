@@ -118,6 +118,23 @@ if ($IncludeCcSwitch) {
 
 #=================== 辅助函数 ===================
 
+function Test-WhatIfMode {
+    return $WhatIf -or $WhatIfPreference
+}
+
+function Write-VerboseLog {
+    param([string]$Message)
+    # AC 33: 修复 - 使用 $VerbosePreference 正确检测 Verbose 模式
+    # 当 VerbosePreference 不为 SilentlyContinue 时显示详细日志
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] $Message" -ForegroundColor Gray
+    }
+    # WhatIf 模式下跳过日志写入
+    if (-not (Test-WhatIfMode)) {
+        Add-Content -Path $Script:LogFile -Value "[VERBOSE] $Message" -ErrorAction SilentlyContinue
+    }
+}
+
 function Write-Header {
     param([string]$Message)
     $msg = "`n$('=' * 60)`n  $Message`n$('=' * 60)`n"
@@ -149,19 +166,6 @@ function Write-Error {
     Write-Host "[X] $Message" -ForegroundColor Red
     Add-Content -Path $Script:LogFile -Value "[ERROR] $Message"
     $Script:ErrorCount++
-}
-
-function Write-VerboseLog {
-    param([string]$Message)
-    # AC 33: 修复 - 使用 $VerbosePreference 正确检测 Verbose 模式
-    # 当 VerbosePreference 不为 SilentlyContinue 时显示详细日志
-    if ($VerbosePreference -ne 'SilentlyContinue') {
-        Write-Host "    [VERBOSE] $Message" -ForegroundColor Gray
-    }
-    # WhatIf 模式下跳过日志写入
-    if (-not (Test-WhatIfMode)) {
-        Add-Content -Path $Script:LogFile -Value "[VERBOSE] $Message" -ErrorAction SilentlyContinue
-    }
 }
 
 # AC 36: 检查并发安装
@@ -246,10 +250,6 @@ function Remove-LockFile {
     if (Test-Path $Script:LockFilePath) {
         Remove-Item $Script:LockFilePath -Force -ErrorAction SilentlyContinue
     }
-}
-
-function Test-WhatIfMode {
-    return $WhatIf -or $WhatIfPreference
 }
 
 function Write-WhatIfHeader {

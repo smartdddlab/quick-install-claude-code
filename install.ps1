@@ -791,6 +791,32 @@ function Test-NetworkAndSelectMirror {
 
 #=================== AC 3-6: Git Bash 检测和安装 ===================
 
+# 查找 Git Bash 的实际路径
+function Find-GitBashPath {
+    $scoopGitPath = "$env:USERPROFILE\scoop\apps\git"
+
+    # 首先尝试 current 链接
+    $defaultPath = "$scoopGitPath\current\bin\bash.exe"
+    if (Test-Path $defaultPath) {
+        return $defaultPath
+    }
+
+    # 如果 current 链接不存在，查找版本目录
+    if (Test-Path $scoopGitPath) {
+        $versionDirs = Get-ChildItem -Path $scoopGitPath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[\d\.]+' }
+        if ($versionDirs) {
+            $latestVersion = $versionDirs | Sort-Object Name -Descending | Select-Object -First 1
+            $versionPath = "$scoopGitPath\$($latestVersion.Name)\bin\bash.exe"
+            if (Test-Path $versionPath) {
+                Write-VerboseLog "找到 Git 版本: $($latestVersion.Name)"
+                return $versionPath
+            }
+        }
+    }
+
+    return $null
+}
+
 function Test-And-InstallGitBash {
     param(
         [string]$DriveLetter,
@@ -875,6 +901,8 @@ function Test-And-InstallGitBash {
         $scoopListOutput = scoop list 2>&1 | Out-String
         if ($scoopListOutput -match 'git\s') {
             Write-Success "Git 已在 Scoop 中，跳过安装"
+            # 查找 Git 的实际安装位置
+            $bashPath = Find-GitBashPath
         } else {
             # 直接执行安装命令，等待完成
             Write-Host "  正在下载并安装 Git (可能需要几分钟)..." -ForegroundColor Gray
@@ -882,17 +910,18 @@ function Test-And-InstallGitBash {
             # 直接执行命令，不收集输出（避免影响 $LASTEXITCODE）
             scoop install --skip-update git
 
-            # 检查 Git Bash 是否安装成功
-            $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
+            # 查找 Git 的实际安装位置
+            $bashPath = Find-GitBashPath
 
-            if (Test-Path $bashPath) {
+            if ($bashPath) {
                 Write-Success "Git 安装完成"
             } else {
                 # 如果失败，尝试不带 --skip-update
                 Write-Host "  第一次尝试失败，再次尝试..." -ForegroundColor Gray
                 scoop install git
 
-                if (Test-Path $bashPath) {
+                $bashPath = Find-GitBashPath
+                if ($bashPath) {
                     Write-Success "Git 安装完成"
                 } else {
                     Write-Error "Git 安装失败"

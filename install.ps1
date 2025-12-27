@@ -1062,23 +1062,8 @@ function Install-Tools {
         # 直接执行安装命令，等待完成
         Write-Host "  正在下载并安装 $tool (可能需要几分钟)..." -ForegroundColor Gray
 
-        try {
-            $installOutput = scoop install --skip-update $tool 2>&1
-            $installExitCode = $LASTEXITCODE
-
-            if ($VerbosePreference -ne 'SilentlyContinue') {
-                $installOutput | ForEach-Object { Write-VerboseLog "  [scoop] $_" }
-            }
-
-            if ($installExitCode -eq 0) {
-                Write-Success "$tool 安装完成"
-            } else {
-                Write-Warning "$tool 安装返回退出码: $installExitCode"
-            }
-        } catch {
-            Write-VerboseLog "$tool 安装异常: $_"
-            $installExitCode = 1
-        }
+        # 直接执行命令
+        scoop install --skip-update $tool
 
         # 验证安装结果
         $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
@@ -1106,23 +1091,26 @@ function Install-Tools {
         }
 
         # 检查工具是否在可用 bucket 中
-        $searchResult = scoop search $tool 2>&1
+        $searchResult = scoop search $tool 2>&1 | Out-String
         if ($searchResult -match $tool) {
-            try {
-                # cc-switch 在 extras bucket，需要先添加
-                if ($tool -eq 'cc-switch') {
-                    $bucketAdded = $false
-                    $buckets = scoop bucket list 2>&1 | Out-String
-                    if ($buckets -notmatch 'extras') {
-                        Write-VerboseLog "添加 extras bucket..."
-                        scoop bucket add extras 2>&1 | Out-Null
-                        $bucketAdded = $true
-                    }
+            # cc-switch 在 extras bucket，需要先添加
+            if ($tool -eq 'cc-switch') {
+                $buckets = scoop bucket list 2>&1 | Out-String
+                if ($buckets -notmatch 'extras') {
+                    Write-Host "  添加 extras bucket..." -ForegroundColor Gray
+                    scoop bucket add extras
                 }
+            }
 
-                scoop install --skip-update $tool 2>&1 | Out-Null
+            # 直接执行安装命令
+            Write-Host "  正在安装 $tool..." -ForegroundColor Gray
+            scoop install --skip-update $tool
+
+            # 验证安装结果
+            $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
+            if (Test-Path $toolAppPath) {
                 Write-Success "$tool 安装完成"
-            } catch {
+            } else {
                 Write-Warning "$tool 安装失败，跳过"
             }
         } else {

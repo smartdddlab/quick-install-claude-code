@@ -830,9 +830,13 @@ function Find-GitBashPath {
     }
 
     # 如果 current 链接不存在，查找版本目录
+    # 支持多种版本目录命名格式: 2.44.0, 2.44.0.windows.1, git-2.44.0 等
     if (Test-Path $scoopGitPath) {
-        $versionDirs = Get-ChildItem -Path $scoopGitPath -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[\d\.]+' }
+        $versionDirs = Get-ChildItem -Path $scoopGitPath -Directory -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -match '^[0-9]'  # 以数字开头的目录名
+        }
         if ($versionDirs) {
+            # 按名称排序，数字版本号会正确排序（更高版本在前面）
             $latestVersion = $versionDirs | Sort-Object Name -Descending | Select-Object -First 1
             $versionPath = "$scoopGitPath\$($latestVersion.Name)\bin\bash.exe"
             if (Test-Path $versionPath) {
@@ -937,6 +941,13 @@ function Test-And-InstallGitBash {
 
             # 直接执行命令
             scoop install git
+
+            # 刷新 PATH 以确保新安装的命令可用
+            $scoopShimsPath = "$env:USERPROFILE\scoop\shims"
+            if ($env:PATH -notcontains $scoopShimsPath) {
+                $env:PATH = "$scoopShimsPath;$env:PATH"
+                Write-VerboseLog "已刷新 PATH 添加 scoop shims 目录"
+            }
 
             # 查找 Git 的实际安装位置
             $bashPath = Find-GitBashPath

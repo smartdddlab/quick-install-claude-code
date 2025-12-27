@@ -2239,11 +2239,11 @@ function Start-Installation {
         Remove-LockFile
     }
 
-    # 返回适当的退出码
+    # 返回适当的退出码 (在 irm|iex 场景下使用 return 避免关闭 PowerShell 窗口)
     if ($Script:ErrorCount -gt 0 -or -not $Script:InstallSuccess) {
-        exit 1
+        return 1
     }
-    exit 0
+    return 0
 }
 
 # 执行安装

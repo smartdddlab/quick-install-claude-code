@@ -891,6 +891,10 @@ function Test-And-InstallGitBash {
     # AC 20: Given Git Bash 已存在，When 安装，Then 跳过 Git 安装
     if ($bashFound) {
         Write-VerboseLog "Git Bash 已存在，跳过安装"
+        # 确保 Scoop 镜像配置生效（即使 Git Bash 已安装也要配置）
+        if ($UseChinaMirror) {
+            Configure-ScoopChinaMirror
+        }
         return $bashPath
     }
 

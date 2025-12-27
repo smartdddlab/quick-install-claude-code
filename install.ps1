@@ -209,7 +209,8 @@ function Invoke-RetryCommand {
         [string]$Description,
         [int]$MaxRetries = 3,
         [int]$RetryDelay = 2,
-        [bool]$LongOperation = $false
+        [bool]$LongOperation = $false,
+        [object[]]$ArgumentList = @()
     )
 
     $attempt = 0
@@ -217,7 +218,7 @@ function Invoke-RetryCommand {
     while ($attempt -lt $MaxRetries) {
         $attempt++
         try {
-            $result = & $ScriptBlock
+            $result = & $ScriptBlock @ArgumentList
             if ($LASTEXITCODE -eq 0) {
                 if ($attempt -gt 1) {
                     Write-Success "$Description 成功 (第 $attempt 次尝试)"
@@ -1302,27 +1303,20 @@ function Install-ClaudeCode {
     try {
         Write-Step "通过 npm 全局安装 Claude Code..."
 
-        # 配置 npm 使用淘宝镜像（如果在国内环境）
-        if ($UseChinaMirror) {
-            Write-VerboseLog "配置 npm 使用淘宝镜像..."
-            npm config set registry https://registry.npmmirror.com
-        }
+        # 使用 --registry 参数临时设置镜像，不污染全局 npm 配置
+        $npmRegistry = if ($UseChinaMirror) { "https://registry.npmmirror.com" } else { "https://registry.npmjs.org" }
+        Write-VerboseLog "使用 npm registry: $npmRegistry"
 
         # 使用 npm 全局安装 (npm 安装耗时较长，需要增加重试次数和等待时间)
         # Claude Code npm 安装可能需要 2-5 分钟，取决于网络速度
         $npmInstallScript = {
+            param($Registry)
             $ErrorActionPreference = 'Continue'
-            npm install -g @anthropic-ai/claude 2>&1
+            npm install -g @anthropic-ai/claude --registry $Registry 2>&1
             return $LASTEXITCODE
         }.GetNewClosure()
 
-        $result = Invoke-RetryCommand -ScriptBlock $npmInstallScript -Description "Claude Code npm 安装" -MaxRetries 5 -RetryDelay 30 -LongOperation $true
-
-        # 恢复 npm 镜像设置（可选）
-        if ($UseChinaMirror) {
-            Write-VerboseLog "恢复 npm 默认镜像..."
-            npm config set registry https://registry.npmjs.org 2>&1 | Out-Null
-        }
+        $result = Invoke-RetryCommand -ScriptBlock $npmInstallScript -Description "Claude Code npm 安装" -MaxRetries 5 -RetryDelay 30 -LongOperation $true -ArgumentList $npmRegistry
 
         if ($result -ne $null -or (Get-Command claude -ErrorAction SilentlyContinue)) {
             try {
@@ -1424,6 +1418,7 @@ function Install-SuperClaude {
 
     # 自动安装
     # 失败可继续
+    # 安装到 $InstallPath\SuperClaude_Framework
 
     if ($SkipSuperClaude) {
         Write-Warning "跳过 SuperClaude 安装 (用户指定)"
@@ -1432,8 +1427,8 @@ function Install-SuperClaude {
 
     Write-Header "Step 7: 安装 SuperClaude (可选)"
 
-    # 安装到用户目录
-    $superClaudePath = "$env:USERPROFILE\SuperClaude_Framework"
+    # 安装到与主安装目录相同的路径
+    $superClaudePath = "$InstallPath\SuperClaude_Framework"
 
     if (Test-Path $superClaudePath) {
         Write-Success "SuperClaude 已存在"
@@ -2253,10 +2248,9 @@ function Start-Installation {
         Test-CancellationRequested
         $null = Set-ClaudeOnboardingConfig
 
-        # Step 7: SuperClaude (安装到用户目录)
+        # Step 7: SuperClaude (安装到主安装目录)
         Test-CancellationRequested
-        $superClaudePath = "$env:USERPROFILE\SuperClaude_Framework"
-        $null = Install-SuperClaude -InstallPath $superClaudePath
+        $null = Install-SuperClaude -InstallPath $installPath
 
         # Step 8: 创建卸载脚本
         Test-CancellationRequested

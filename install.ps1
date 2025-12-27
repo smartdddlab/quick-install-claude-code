@@ -907,8 +907,8 @@ function Test-And-InstallGitBash {
             # 直接执行安装命令，等待完成
             Write-Host "  正在下载并安装 Git (可能需要几分钟)..." -ForegroundColor Gray
 
-            # 直接执行命令，不收集输出（避免影响 $LASTEXITCODE）
-            scoop install --skip-update git
+            # 直接执行命令
+            scoop install git
 
             # 查找 Git 的实际安装位置
             $bashPath = Find-GitBashPath
@@ -916,18 +916,9 @@ function Test-And-InstallGitBash {
             if ($bashPath) {
                 Write-Success "Git 安装完成"
             } else {
-                # 如果失败，尝试不带 --skip-update
-                Write-Host "  第一次尝试失败，再次尝试..." -ForegroundColor Gray
-                scoop install git
-
-                $bashPath = Find-GitBashPath
-                if ($bashPath) {
-                    Write-Success "Git 安装完成"
-                } else {
-                    Write-Error "Git 安装失败"
-                    Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
-                    return $null
-                }
+                Write-Error "Git 安装失败"
+                Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
+                return $null
             }
         }
 
@@ -1092,7 +1083,7 @@ function Install-Tools {
         Write-Host "  正在下载并安装 $tool (可能需要几分钟)..." -ForegroundColor Gray
 
         # 直接执行命令
-        scoop install --skip-update $tool
+        scoop install $tool
 
         # 验证安装结果
         $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
@@ -1133,7 +1124,7 @@ function Install-Tools {
 
             # 直接执行安装命令
             Write-Host "  正在安装 $tool..." -ForegroundColor Gray
-            scoop install --skip-update $tool
+            scoop install $tool
 
             # 验证安装结果
             $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"

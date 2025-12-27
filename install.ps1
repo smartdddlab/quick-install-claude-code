@@ -1298,74 +1298,56 @@ function Install-ClaudeCode {
     # 使用 --registry 参数临时设置镜像，不污染全局 npm 配置
     $npmRegistry = if ($UseChinaMirror) { "https://registry.npmmirror.com" } else { "https://registry.npmjs.org" }
 
-    # Claude Code 安装包列表（按优先级）
-    $claudePackages = @('@anthropic-ai/claude-code', 'claude-code-cli', 'claude')
-
     if (Test-WhatIfMode) {
-        Write-Host "    [WHATIF] 尝试安装以下包之一:" -ForegroundColor DarkGray
-        foreach ($pkg in $claudePackages) {
-            Write-Host "    [WHATIF]   npm install -g $pkg --registry $npmRegistry" -ForegroundColor DarkGray
-        }
+        Write-Host "    [WHATIF] npm install -g @anthropic-ai/claude-code --registry $npmRegistry" -ForegroundColor DarkGray
         return $true
     }
 
     Write-VerboseLog "使用 npm registry: $npmRegistry"
 
-    $installed = $false
-    $lastError = $null
+    try {
+        Write-Step "通过 npm 全局安装 Claude Code..."
 
-    foreach ($package in $claudePackages) {
-        try {
-            Write-Step "尝试安装 $package..."
+        $npmInstallScript = {
+            param($Reg)
+            $ErrorActionPreference = 'Continue'
+            npm install -g @anthropic-ai/claude-code --registry $Reg 2>&1
+            return $LASTEXITCODE
+        }.GetNewClosure()
 
-            $npmInstallScript = {
-                param($Pkg, $Reg)
-                $ErrorActionPreference = 'Continue'
-                npm install -g $Pkg --registry $Reg 2>&1
-                return $LASTEXITCODE
-            }.GetNewClosure()
+        $result = Invoke-RetryCommand `
+            -ScriptBlock $npmInstallScript `
+            -Description "Claude Code npm 安装" `
+            -MaxRetries 5 `
+            -RetryDelay 30 `
+            -LongOperation $true `
+            -ArgumentList $npmRegistry
 
-            $result = Invoke-RetryCommand `
-                -ScriptBlock $npmInstallScript `
-                -Description "$package npm 安装" `
-                -MaxRetries 3 `
-                -RetryDelay 30 `
-                -LongOperation $true `
-                -ArgumentList @($package, $npmRegistry)
-
-            # 验证是否安装成功
-            if ((Get-Command claude -ErrorAction SilentlyContinue) -or $result -eq 0) {
-                try {
-                    $version = claude --version 2>&1 | Out-String
-                    if ($version) {
-                        Write-Success "Claude Code 安装完成 - $version"
-                        $installed = $true
-                        break
-                    }
-                } catch {
-                    # 命令可能还未刷新，继续尝试
+        # 验证是否安装成功
+        if ((Get-Command claude -ErrorAction SilentlyContinue) -or $result -eq 0) {
+            try {
+                $version = claude --version 2>&1 | Out-String
+                if ($version) {
+                    Write-Success "Claude Code 安装完成 - $version"
+                } else {
+                    Write-Success "Claude Code 安装完成"
                 }
+                return $true
+            } catch {
+                Write-Success "Claude Code 安装完成"
+                return $true
             }
-
-            Write-Warning "$package 安装失败，尝试下一个方案..."
-            $lastError = "安装 $package 失败"
-        } catch {
-            $lastError = $_
-            Write-VerboseLog "$package 安装异常: $_"
         }
-    }
 
-    if (-not $installed) {
         Write-Warning "Claude Code npm 安装失败，但可继续"
         Write-Host ""
-        Write-Host "  手动安装方案:" -ForegroundColor Yellow
-        Write-Host "  1. npm install -g @anthropic-ai/claude --registry https://registry.npmmirror.com" -ForegroundColor Cyan
-        Write-Host "  2. 或从官网下载: https://claude.com/cli" -ForegroundColor Cyan
-        Write-Host ""
-        return $true  # 不阻断安装流程
-    }
+        Write-Host "  手动安装: npm install -g @anthropic-ai/claude-code --registry $npmRegistry" -ForegroundColor Cyan
+        return $true
 
-    return $true
+    } catch {
+        Write-Warning "Claude Code 安装失败: $_"
+        return $true
+    }
 }
 
 #=================== Claude Code 跳过 onboarding 配置 ===================

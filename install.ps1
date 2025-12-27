@@ -835,8 +835,13 @@ function Test-And-InstallGitBash {
     if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
         Write-Step "Scoop 未安装，正在安装..."
         Install-Scoop -DriveLetter $DriveLetter -InstallDir $InstallDir
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Scoop 安装失败"
+
+        # 验证 Scoop 是否安装成功
+        if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+            Write-Error "Scoop 安装失败，无法继续安装 Git"
+            Write-Host "  请手动运行以下命令后重试:" -ForegroundColor Cyan
+            Write-Host "  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Cyan
+            Write-Host "  Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression" -ForegroundColor Cyan
             return $null
         }
     } else {
@@ -959,29 +964,48 @@ function Install-Scoop {
     # 配置 Scoop 安装路径（用户级）
     $env:SCOOP = $scoopDir
 
-    # AC 25: 使用重试逻辑
+    # AC 25: 使用重试逻辑，按照官方 Scoop 安装命令
     $installScript = {
-        # 下载并验证安装脚本
-        $progressPreference = 'silentlyContinue'
-        $scriptContent = Invoke-WebRequest -Uri "https://get.scoop.sh" -TimeoutSec 30 -ErrorAction Stop
-        $progressPreference = 'Continue'
+        $ErrorActionPreference = 'Continue'
 
-        # 基本安全检查：验证脚本是 PowerShell 脚本
-        if ($scriptContent.Content -notmatch '#Requires|Install-Scoop') {
-            throw "下载的脚本内容无效"
+        # 官方 Scoop 安装命令
+        # 第一步：设置执行策略（如果尚未设置）
+        $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
+        if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'Undefined') {
+            Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
         }
 
-        # 执行安装
-        Invoke-Expression $scriptContent.Content
+        # 第二步：执行 Scoop 安装脚本
+        Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+        return $LASTEXITCODE
     }.GetNewClosure()
 
     $result = Invoke-RetryCommand -ScriptBlock $installScript -Description "Scoop 安装" -MaxRetries 3
 
-    if ($null -eq $result -and -not (Get-Command scoop -ErrorAction SilentlyContinue)) {
-        throw "Scoop 安装失败"
+    # 验证 Scoop 是否安装成功
+    $scoopInstalled = $false
+    if ($null -ne $result) {
+        # 检查 scoop 命令是否可用
+        $scoopCheck = Get-Command scoop -ErrorAction SilentlyContinue
+        if ($scoopCheck) {
+            $scoopInstalled = $true
+        }
     }
 
-    Write-Success "Scoop 安装完成"
+    # 如果命令检测失败，尝试直接检测 scoop 目录
+    if (-not $scoopInstalled -and (Test-Path "$scoopDir\apps\scoop")) {
+        $scoopInstalled = $true
+    }
+
+    if ($scoopInstalled) {
+        Write-Success "Scoop 安装完成"
+    } else {
+        Write-Error "Scoop 安装失败"
+        Write-Host "  请手动运行以下命令后重试:" -ForegroundColor Cyan
+        Write-Host "  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Cyan
+        Write-Host "  Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression" -ForegroundColor Cyan
+    }
 }
 
 #=================== AC 7, 11-12: 工具安装和环境变量 ===================

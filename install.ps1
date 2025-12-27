@@ -950,8 +950,8 @@ function Install-Scoop {
     # 用户级安装使用默认目录
     $scoopDir = "$env:USERPROFILE\scoop"
 
-    # 如果已存在 Scoop，跳过
-    if (Test-Path "$env:SCOOP") {
+    # 如果已存在 Scoop，跳过（先检查变量是否为空）
+    if ($env:SCOOP -and (Test-Path $env:SCOOP)) {
         Write-Success "Scoop 已存在"
         return
     }

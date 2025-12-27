@@ -1137,6 +1137,14 @@ function Install-Tools {
         # 直接执行命令
         scoop install $tool
 
+        # 刷新 PATH 以确保新安装的命令可用
+        # scoop 安装后需要刷新 PATH，特别是 nodejs-lts 安装后需要立即使用 npm
+        $scoopShimsPath = "$env:USERPROFILE\scoop\shims"
+        if ($env:PATH -notcontains $scoopShimsPath) {
+            $env:PATH = "$scoopShimsPath;$env:PATH"
+            Write-VerboseLog "已刷新 PATH 添加 scoop shims 目录"
+        }
+
         # 验证安装结果
         $toolAppPath = "$env:USERPROFILE\scoop\apps\$tool"
         if (Test-Path $toolAppPath) {

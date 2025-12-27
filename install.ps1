@@ -10,6 +10,7 @@ param(
     [switch]$WhatIf,
     [switch]$SkipSuperClaude,
     [switch]$IncludeCcSwitch,
+    [switch]$UseChinaMirror,  # 默认启用国内镜像
     [string]$InstallDrive,
     [string]$InstallDir = "smartddd-claude-tools"
 )
@@ -27,6 +28,15 @@ if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
     $IncludeCcSwitch = $true
     Write-VerboseLog "使用环境变量 CLAUDE_INCLUDE_CC_SWITCH: true"
 }
+if (-not $UseChinaMirror -and $env:CLAUDE_USE_CHINA_MIRROR -eq '1') {
+    $UseChinaMirror = $true
+    Write-VerboseLog "使用环境变量 CLAUDE_USE_CHINA_MIRROR: true"
+}
+# 默认启用国内镜像
+if (-not $PSBoundParameters.ContainsKey('UseChinaMirror') -and -not $env:CLAUDE_USE_CHINA_MIRROR) {
+    $UseChinaMirror = $true
+    Write-VerboseLog "默认启用国内镜像"
+}
 
 <#
 .SYNOPSIS
@@ -41,6 +51,8 @@ if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
     跳过 SuperClaude 安装
 .PARAMETER IncludeCcSwitch
     包含 cc-switch 镜像切换工具（默认为可选工具）
+.PARAMETER UseChinaMirror
+    使用国内 Gitee 镜像加速下载（默认启用）
 .PARAMETER InstallDrive
     指定安装驱动器 (如 D:, E:, F:, C:)
 .PARAMETER InstallDir
@@ -50,12 +62,14 @@ if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
     .\install.ps1
     .\install.ps1 -InstallDrive D -SkipSuperClaude
     .\install.ps1 -IncludeCcSwitch -Verbose
+    .\install.ps1 -UseChinaMirror:$false  # 跳过国内镜像
     .\install.ps1 -WhatIf -Verbose
 
     # 一键安装（从 GitHub）
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -InstallDrive D
     irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex -SkipSuperClaude
+    $env:CLAUDE_USE_CHINA_MIRROR="0"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex  # 跳过国内镜像
 
     # 执行策略限制时，使用 Bypass 绕过
     powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex"
@@ -1032,12 +1046,50 @@ function Install-Scoop {
 
     if ($scoopInstalled) {
         Write-Success "Scoop 安装完成"
+
+        # 配置国内镜像（如果启用）
+        if ($UseChinaMirror) {
+            Configure-ScoopChinaMirror
+        }
     } else {
         Write-Error "Scoop 安装失败"
         Write-Host "  请手动运行以下命令后重试:" -ForegroundColor Cyan
         Write-Host "  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Cyan
         Write-Host "  Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression" -ForegroundColor Cyan
     }
+}
+
+# 配置 Scoop 国内镜像
+function Configure-ScoopChinaMirror {
+    param()
+
+    Write-Step "配置国内镜像..."
+
+    if (Test-WhatIfMode) {
+        Write-Host "    [WHATIF] scoop config scoop_repo https://gitee.com/scoop-installer-mirrors/Scoop" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] scoop bucket add main https://gitee.com/scoop-installer-mirrors/Main" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] scoop bucket add extras https://gitee.com/scoop-installer-mirrors/Extras" -ForegroundColor DarkGray
+        return
+    }
+
+    # 配置 Scoop 仓库镜像
+    Write-VerboseLog "配置 Scoop 仓库镜像..."
+    scoop config scoop_repo https://gitee.com/scoop-installer-mirrors/Scoop
+
+    # 添加 main bucket 镜像
+    Write-VerboseLog "添加 main bucket..."
+    $buckets = scoop bucket list 2>&1 | Out-String
+    if ($buckets -notmatch 'main') {
+        scoop bucket add main https://gitee.com/scoop-installer-mirrors/Main
+    }
+
+    # 添加 extras bucket 镜像
+    Write-VerboseLog "添加 extras bucket..."
+    if ($buckets -notmatch 'extras') {
+        scoop bucket add extras https://gitee.com/scoop-installer-mirrors/Extras
+    }
+
+    Write-Success "国内镜像配置完成"
 }
 
 #=================== AC 7, 11-12: 工具安装和环境变量 ===================

@@ -18,11 +18,17 @@ This is a **Claude Code Windows 一键安装器** - a PowerShell script that aut
 # Skip SuperClaude installation
 .\install.ps1 -SkipSuperClaude
 
+# Skip China mirror (use default scoop repos)
+.\install.ps1 -UseChinaMirror:$false
+
 # Remote installation from GitHub
 irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 
 # Remote installation with parameters (use environment variables)
 $env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
+
+# Skip China mirror via environment variable
+$env:CLAUDE_USE_CHINA_MIRROR="0"; irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 ```
 
 ## Remote Installation Environment Variables
@@ -34,6 +40,7 @@ For `irm | iex` scenarios, parameters must be passed via environment variables:
 | `CLAUDE_INSTALL_DRIVE` | Installation drive | `$env:CLAUDE_INSTALL_DRIVE="D"` |
 | `CLAUDE_SKIP_SUPERCLAUDE` | Skip SuperClaude | `$env:CLAUDE_SKIP_SUPERCLAUDE="1"` |
 | `CLAUDE_INCLUDE_CC_SWITCH` | Include cc-switch | `$env:CLAUDE_INCLUDE_CC_SWITCH="1"` |
+| `CLAUDE_USE_CHINA_MIRROR` | Use China mirror (1=enable, 0=disable) | `$env:CLAUDE_USE_CHINA_MIRROR="0"` |
 
 ## Execution Policy Handling
 
@@ -68,7 +75,8 @@ The `install.ps1` script is organized into functional steps:
 | `-Verbose` | Detailed logging output |
 | `-InstallDrive` | Specify installation drive (D/E/F/C) |
 | `-SkipSuperClaude` | Skip SuperClaude framework |
-| `-SkipToolCheck` | Skip tool existence detection |
+| `-UseChinaMirror` | Use China Gitee mirror (default: enabled) |
+| `-IncludeCcSwitch` | Include cc-switch tool |
 
 ## GitHub Actions
 

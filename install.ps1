@@ -1282,14 +1282,15 @@ function Install-ClaudeCode {
     try {
         Write-Step "通过 npm 全局安装 Claude Code..."
 
-        # 使用 npm 全局安装
+        # 使用 npm 全局安装 (npm 安装耗时较长，需要增加重试次数和等待时间)
+        # Claude Code npm 安装可能需要 2-5 分钟，取决于网络速度
         $npmInstallScript = {
             $ErrorActionPreference = 'Continue'
             npm install -g @anthropic-ai/claude 2>&1
             return $LASTEXITCODE
         }.GetNewClosure()
 
-        $result = Invoke-RetryCommand -ScriptBlock $npmInstallScript -Description "Claude Code 安装" -MaxRetries 3
+        $result = Invoke-RetryCommand -ScriptBlock $npmInstallScript -Description "Claude Code npm 安装" -MaxRetries 5 -RetryDelay 30 -LongOperation $true
 
         if ($result -ne $null -or (Get-Command claude -ErrorAction SilentlyContinue)) {
             try {
@@ -1451,7 +1452,7 @@ function Install-SuperClaude {
             Write-VerboseLog "检测到 pyproject.toml，使用 uv pip install -e"
             $uvInstallResult = uv pip install -e $superClaudePath --system 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "SuperClaude 环境初始化完成"
+                Write-Success "SuperClaude 依赖安装完成"
             } else {
                 Write-Warning "SuperClaude uv 安装部分失败: $uvInstallResult"
             }
@@ -1460,12 +1461,22 @@ function Install-SuperClaude {
             Write-VerboseLog "检测到 requirements.txt，使用 uv pip install -r"
             $uvInstallResult = uv pip install -r $requirementsPath --system 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Success "SuperClaude 环境初始化完成"
+                Write-Success "SuperClaude 依赖安装完成"
             } else {
                 Write-Warning "SuperClaude uv 安装部分失败: $uvInstallResult"
             }
         } else {
             Write-VerboseLog "未检测到依赖文件，跳过 uv 安装"
+        }
+
+        # 运行 superclaude install 完成初始化
+        Write-Step "运行 superclaude install 完成初始化..."
+        $superClaudeInstallResult = superclaude install 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "SuperClaude 初始化完成"
+        } else {
+            Write-Warning "superclaude install 执行部分失败: $superClaudeInstallResult"
+            Write-VerboseLog "可手动运行: superclaude install"
         }
 
         Write-Success "SuperClaude 安装完成"
@@ -2066,8 +2077,6 @@ function Complete-Installation {
     Write-Host "  1. 重启终端或运行 RefreshEnv.cmd 刷新环境" -ForegroundColor Cyan
     Write-Host "  2. Claude Code CLI 命令为 'claude'" -ForegroundColor Cyan
     Write-Host "  3. 运行 'claude --help' 验证" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "如需卸载，运行: $InstallPath\scripts\uninstall.ps1" -ForegroundColor Cyan
     Write-Host ""
 
     # AC 32: 快速入门指引

@@ -1,9 +1,9 @@
-# Tech-Spec: Claude Code Windows 一键安装器
+# Tech-Spec: Claude Code Windows 一键安装器 - v1.0
 
 **创建日期:** 2025-12-23
-**完成日期:** 2025-12-23
-**版本:** v2.1 (新增 Shell 自动安装)
-**状态:** completed (AI代码审查问题已修复)
+**更新日期:** 2025-12-27
+**版本:** v1.0 (稳定版本)
+**状态:** done (已发布)
 
 ---
 
@@ -15,19 +15,20 @@
 - 需要手动安装大量依赖工具（git、bash、python3.12、nodejs）
 - 需要配置多个环境变量（SHELL、CLAUDE_CODE_GIT_BASH_PATH）
 - PowerShell 执行策略限制可能导致脚本无法运行
-- 中国网络环境需要特殊配置（镜像源）
 - 安装过程容易出错，难以卸载
+- 已安装工具重复安装浪费时间和资源
 
 ### 解决方案
 
-Claude Code 中国开发者完整环境一键安装器
+Claude Code Windows 环境一键安装器
 
 - 单个 PowerShell 脚本，零配置安装
 - Scoop 包管理（Windows 版 brew）
 - 自动检测并安装 Git Bash（解决 shell 不存在的问题）
 - 智能驱动器选择（D→E→F→C）
-- 自动网络测试，镜像源自适应
+- 自动网络测试
 - 完整的卸载支持
+- 改进的工具存在性检测 - scoop which 优先，命令检测次之，路径检测兜底
 
 ### 核心约束
 
@@ -36,6 +37,8 @@ Claude Code 中国开发者完整环境一键安装器
 3. 用户级权限 - 无需管理员权限
 4. 自动化决策 - 最小化用户交互
 5. Shell 自动配置 - 自动安装并配置 Git Bash
+6. 检测优先级 - scoop which > 命令检测 > 路径检测
+7. cc-switch 特殊处理 - 不适用 scoop which
 
 ---
 
@@ -46,42 +49,49 @@ Step 1: 环境检测
   - 执行策略检测
   - 驱动器选择 (D→E→F→C)
 
-Step 2: 安装 Git Bash（如不存在）
+Step 2: 工具存在性检测（优先级：scoop which > 命令检测 > 路径检测）
+  - 检测 Scoop 是否已安装
+  - Scoop 已安装时：使用 `scoop which <tool>` 检测（cc-switch 除外）
+  - Scoop 未安装或 scoop which 失败时：使用 `Get-Command` + 执行版本命令
+  - 最后兜底：检查已知安装路径
+  - cc-switch 特殊处理：直接命令检测，不尝试 scoop which
+
+Step 3: 安装 Git Bash（如不存在）
   - 检测 Git Bash 是否存在
   - 不存在则通过 Scoop 安装
   - 验证 Git Bash 可用
 
-Step 3: 网络测试与镜像源选择
+Step 4: 网络测试
   - 测试 GitHub 连通性
-  - 可访问 → 官方源
-  - 不可访问 → 国内镜像源
+  - 提示网络配置建议
 
-Step 4: 安装 Scoop
+Step 5: 安装 Scoop
   - 检测现有安装
   - 配置镜像源
   - 添加 buckets
 
-Step 5: 安装工具
-  - Git（包含 Git Bash）
-  - Python 3.12
-  - Node.js LTS
-  - cc-switch
-  - 其他工具
+Step 6: 安装缺失工具
+  - Git（包含 Git Bash）- 如不存在
+  - Python 3.12 - 如不存在
+  - Node.js LTS - 如不存在
+  - cc-switch - 如不存在且指定
+  - 其他工具 - 如不存在
 
-Step 6: 配置环境变量
+Step 7: 配置环境变量
   - SHELL（指向 bash.exe）
   - CLAUDE_CODE_GIT_BASH_PATH
   - pip、npm 镜像源
   - 当前会话临时设置
 
-Step 7: 安装 SuperClaude（可跳过）
+Step 8: 安装 SuperClaude（可跳过）
 
-Step 8: 验证与完成
+Step 9: 验证与完成
   - 显示快速入门指引
+  - 显示安装摘要
 
 ---
 
-## 验收标准（38 条）
+## 验收标准（48 条）
 
 ### 核心功能 (AC 1-16)
 
@@ -133,6 +143,22 @@ Step 8: 验证与完成
 - [x] AC 37: 镜像源失败自动切换
 - [x] AC 38: -SkipSuperClaude 正常工作
 
+### 工具存在性检测 v2.2 (AC 39-42)
+
+- [x] AC 39: Given 所有目标工具，When 执行安装，Then 先检测每个工具的存在性
+- [x] AC 40: Given 工具已存在，When 跳过安装，Then 记录到检测报告并显示"已跳过"
+- [x] AC 41: Given 工具不存在，When 执行安装，Then 正常安装并标记为"已安装"
+- [x] AC 42: Given 工具检测完成，When 显示摘要，Then 显示"已安装: N, 已跳过: M"
+
+### v2.3 检测逻辑改进 (AC 43-48)
+
+- [x] AC 43: Given Scoop 已安装，When 检测工具，Then 首先尝试 `scoop which <tool>`
+- [x] AC 44: Given scoop which 返回工具路径，When 继续检测，Then 确认工具已安装
+- [x] AC 45: Given scoop which 失败或 Scoop 未安装，When 检测工具，Then 使用 Get-Command + 执行版本命令
+- [x] AC 46: Given 命令检测失败，When 最后兜底，Then 检查已知安装路径 (Test-Path)
+- [x] AC 47: Given cc-switch 工具，When 检测存在性，Then 不使用 scoop which，直接命令检测
+- [x] AC 48: Given 所有检测方法都失败，When 判定工具不存在，Then 标记为"需安装"
+
 ---
 
 ## 命令行参数
@@ -142,9 +168,228 @@ Step 8: 验证与完成
     [-WhatIf]              # 安装预览
     [-Verbose]             # 详细日志
     [-SkipSuperClaude]     # 跳过 SuperClaude
+    [-SkipToolCheck]       # 跳过工具存在性检测
     [-InstallDrive <D>]    # 指定驱动器
     [-InstallDir <name>]   # 指定目录名
 ]
+```
+
+---
+
+## 工具存在性检测实现
+
+### 检测优先级策略
+
+```
+优先级 1: scoop which <tool>    (Scoop 已安装时优先，cc-switch 除外)
+    ↓ 失败
+优先级 2: Get-Command + 执行版本命令
+    ↓ 失败
+优先级 3: Test-Path 已知路径 (兜底)
+```
+
+### 检测工具列表
+
+```powershell
+$ToolChecks = @(
+    @{ Name = "Git";       Command = "git";       VersionCmd = "git --version";       SkipScoopWhich = $false },
+    @{ Name = "Python";    Command = "python";    VersionCmd = "python --version";    SkipScoopWhich = $false },
+    @{ Name = "Node.js";   Command = "node";      VersionCmd = "node --version";      SkipScoopWhich = $false },
+    @{ Name = "Scoop";     Command = "scoop";     VersionCmd = "scoop --version";     SkipScoopWhich = $false },
+    @{ Name = "cc-switch"; Command = "cc-switch"; VersionCmd = "cc-switch version";   SkipScoopWhich = $true }
+)
+```
+
+### 检测函数
+
+```powershell
+# 检测 Scoop 是否可用
+function Test-ScoopAvailable {
+    $scoopCmd = Get-Command "scoop" -ErrorAction SilentlyContinue
+    return $null -ne $scoopCmd
+}
+
+# 使用 scoop which 检测工具
+function Test-ToolWithScoopWhich {
+    param([string]$ToolName)
+
+    try {
+        $result = scoop which $ToolName 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -and $result -match $ToolName) {
+            return @{
+                Exists = $true
+                Method = "scoop which"
+                Path = $result.Trim()
+                Message = "通过 Scoop 安装"
+            }
+        }
+    } catch {
+        Write-VerboseLog "scoop which $ToolName 失败: $_"
+    }
+
+    return @{ Exists = $false }
+}
+
+# 命令检测（Get-Command + 执行版本）
+function Test-ToolWithCommand {
+    param(
+        [string]$Command,
+        [string]$VersionCmd
+    )
+
+    # 1. Get-Command 检测
+    $cmd = Get-Command $Command -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        return @{ Exists = $false; Method = "Get-Command" }
+    }
+
+    # 2. 执行版本命令验证
+    try {
+        $output = & $VersionCmd 2>&1 | Out-String
+        if ($output) {
+            return @{
+                Exists = $true
+                Method = "command"
+                Version = $output.Trim()
+                Command = $Command
+                Message = "命令可用"
+            }
+        }
+    } catch {
+        Write-VerboseLog "版本检查失败 ($VersionCmd): $_"
+    }
+
+    return @{
+        Exists = $true
+        Method = "Get-Command"
+        Command = $Command
+        Message = "命令存在，版本检查失败"
+    }
+}
+
+# 路径检测（兜底）
+function Test-ToolWithPath {
+    param([string]$ToolName)
+
+    $knownPaths = @{
+        "Git" = @(
+            "$env:SCOOP\apps\git\current\bin\git.exe",
+            "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe",
+            "C:\Program Files\Git\cmd\git.exe",
+            "C:\Program Files (x86)\Git\cmd\git.exe"
+        )
+        "Python" = @(
+            "$env:SCOOP\apps\python312\current\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+            "C:\Python312\python.exe"
+        )
+        "Node.js" = @(
+            "$env:SCOOP\apps\nodejs-lts\current\node.exe",
+            "$env:LOCALAPPDATA\Programs\nodejs\node.exe",
+            "C:\Program Files\nodejs\node.exe"
+        )
+    }
+
+    $paths = $knownPaths[$ToolName]
+    if (-not $paths) {
+        return @{ Exists = $false }
+    }
+
+    foreach ($path in $paths) {
+        if (Test-Path $path) {
+            return @{
+                Exists = $true
+                Method = "path"
+                Path = $path
+                Message = "通过路径检测"
+            }
+        }
+    }
+
+    return @{ Exists = $false }
+}
+
+# 综合工具检测函数
+function Test-ToolExists {
+    param(
+        [string]$Name,
+        [string]$Command,
+        [string]$VersionCmd,
+        [bool]$SkipScoopWhich = $false
+    )
+
+    Write-VerboseLog "检测工具: $Name"
+
+    # 优先级 1: scoop which (cc-switch 除外)
+    if (-not $SkipScoopWhich -and (Test-ScoopAvailable)) {
+        $scoopResult = Test-ToolWithScoopWhich -ToolName $Command
+        if ($scoopResult.Exists) {
+            Write-VerboseLog "  → scoop which 检测成功"
+            return $scoopResult
+        }
+    }
+
+    # 优先级 2: 命令检测
+    $cmdResult = Test-ToolWithCommand -Command $Command -VersionCmd $VersionCmd
+    if ($cmdResult.Exists) {
+        Write-VerboseLog "  → 命令检测成功"
+        return $cmdResult
+    }
+
+    # 优先级 3: 路径检测（兜底）
+    $pathResult = Test-ToolWithPath -ToolName $Name
+    if ($pathResult.Exists) {
+        Write-VerboseLog "  → 路径检测成功"
+        return $pathResult
+    }
+
+    # 未找到
+    Write-VerboseLog "  → 未找到"
+    return @{
+        Exists = $false
+        Method = "none"
+        Message = "未安装"
+    }
+}
+
+# 批量工具检测
+function Test-AllTools {
+    Write-Host "`n=== 工具存在性检测 ===" -ForegroundColor Cyan
+    Write-Host "检测策略: scoop which > 命令检测 > 路径检测" -ForegroundColor Gray
+    Write-Host ""
+
+    $script:ToolStatus = @{}
+    $installedCount = 0
+    $skippedCount = 0
+
+    foreach ($tool in $ToolChecks) {
+        $result = Test-ToolExists `
+            -Name $tool.Name `
+            -Command $tool.Command `
+            -VersionCmd $tool.VersionCmd `
+            -SkipScoopWhich $tool.SkipScoopWhich
+
+        $script:ToolStatus[$tool.Name] = $result
+
+        if ($result.Exists) {
+            $installedCount++
+            $method = $result.Method ?? "unknown"
+            Write-Host "[已安装] $($tool.Name) [$method]" -ForegroundColor Green
+            if ($result.Version) {
+                Write-Host "         $($result.Version)" -ForegroundColor Gray
+            }
+        } else {
+            $skippedCount++
+            Write-Host "[需安装] $($tool.Name)" -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host ""
+    Write-Host "检测完成: 已安装 $installedCount, 需安装 $skippedCount" -ForegroundColor Cyan
+    Write-Host "使用策略: scoop which 优先，命令检测次之，路径检测兜底" -ForegroundColor Gray
+
+    return $script:ToolStatus
+}
 ```
 
 ---
@@ -177,15 +422,11 @@ Step 8: 验证与完成
 
 ---
 
-## 镜像源配置
+## 网络配置
 
 ```powershell
-$MIRRORS = @{
-    github = 'https://mirror.ghproxy.com/'
-    pypi = 'https://mirrors.aliyun.com/pypi/simple/'
-    npm = 'https://npmmirror.com/'
-    scoop = 'https://mirrors.tuna.tsinghua.edu.cn/git/scoop.git'
-}
+# GitHub 可访问性测试
+$githubAccessible = Test-Connection github.com -Count 1 -Quiet -ErrorAction SilentlyContinue
 ```
 
 ---
@@ -197,18 +438,18 @@ $MIRRORS = @{
 ```powershell
 function Test-ExecutionPolicy {
     $policy = Get-ExecutionPolicy -Scope CurrentUser
-    
+
     if ($policy -eq 'Restricted' -or $policy -eq 'Undefined') {
         Write-Host "检测到执行策略限制: $policy" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "解决方案："
         Write-Host "  1. 运行：Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned"
-        Write-Host "  2. 或者：powershell -ExecutionPolicy Bypass -File install.ps1"
+        Write-Host "  或者：powershell -ExecutionPolicy Bypass -File install.ps1"
         Write-Host ""
         Write-Host "修改后请重新运行此脚本" -ForegroundColor Cyan
         exit 1
     }
-    
+
     Write-Host "执行策略检查通过: $policy" -ForegroundColor Green
 }
 ```
@@ -222,7 +463,7 @@ function Test-And-InstallGitBash {
         "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe",
         "C:\Program Files\Git\bin\bash.exe"
     )
-    
+
     $bashFound = $false
     foreach ($path in $bashPaths) {
         if (Test-Path $path) {
@@ -231,17 +472,17 @@ function Test-And-InstallGitBash {
             break
         }
     }
-    
+
     if (-not $bashFound) {
         Write-Host "未检测到 Git Bash，将通过 Scoop 安装..." -ForegroundColor Yellow
-        
+
         if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
             Install-Scoop
         }
-        
+
         Write-Host "正在安装 Git..." -ForegroundColor Cyan
         scoop install git -g
-        
+
         $gitBashPath = "$env:SCOOP\apps\git\current\bin\bash.exe"
         if (Test-Path $gitBashPath) {
             Write-Host "Git Bash 安装成功" -ForegroundColor Green
@@ -257,13 +498,13 @@ function Test-And-InstallGitBash {
 ```powershell
 function Set-EnvironmentVariables {
     $bashPath = "$env:SCOOP\apps\git\current\bin\bash.exe"
-    
+
     [Environment]::SetEnvironmentVariable('SHELL', $bashPath, 'User')
     [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $bashPath, 'User')
-    
+
     $env:SHELL = $bashPath
     $env:CLAUDE_CODE_GIT_BASH_PATH = $bashPath
-    
+
     Write-Host "环境变量已配置" -ForegroundColor Green
     Write-Host "SHELL=$bashPath"
     Write-Host ""
@@ -302,49 +543,32 @@ function Select-MirrorMode {
 
 ---
 
-## 文档
-
-### README.md 结构
-
-```markdown
-# Claude Code Windows 一键安装器
-
-## 简介
-## 快速开始（3 步）
-## 安装前检查
-   - PowerShell 版本要求
-   - 执行策略设置
-   - Git Bash 自动安装说明
-## 安装后做什么
-## 常见问题（FAQ）
-   - Q: 提示 "No suitable shell found" 怎么办？
-   - Q: 执行策略限制怎么解决？
-## 故障排除
-## 参数说明
-## 卸载
-```
-
----
-
 ## 测试策略
 
 ### 单元测试
+
 - 执行策略检测逻辑
 - Git Bash 路径检测逻辑
 - 驱动器选择逻辑
 - 网络测试逻辑
+- 工具存在性检测逻辑
 
 ### 集成测试
+
 - 完整安装流程
 - Git Bash 安装验证
 - 环境变量设置
 - 卸载流程
+- 工具检测跳过已安装项
+- 混合场景（部分工具已存在）
 
 ### 系统测试
+
 - Windows 10 测试
 - Windows 11 测试
 - 无 Git 环境测试
 - 执行策略受限环境测试
+- 部分工具已存在时的混合场景
 
 ---
 
@@ -355,9 +579,10 @@ function Select-MirrorMode {
 | PowerShell 执行策略限制 | 检测并提供解决指引 |
 | Git Bash 不存在 | 自动通过 Scoop 安装 |
 | Scoop 安装失败 | 执行策略检测、错误提示 |
-| 网络下载失败 | 多镜像源、自动重试 |
+| 网络下载失败 | 自动重试 |
 | 空间不足 | 安装前检测、警告 |
 | 权限问题 | 用户级安装 |
+| 重复安装 | 工具存在性检测，跳过已安装项 |
 
 ---
 
@@ -365,9 +590,7 @@ function Select-MirrorMode {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
-| v2.1 | 2025-12-23 | 新增 Shell 自动安装和执行策略检测 |
-| v2.0 | 2025-12-23 | 简化版 - 移除过度设计 |
-| v1.5 | 2025-12-23 | Party Mode 专家审查 |
+| v1.0.0 | 2025-12-27 | 稳定版本发布，合并所有历史版本功能 |
 
 ---
 
@@ -400,163 +623,3 @@ function Select-MirrorMode {
 - Scoop: https://scoop.sh/
 - Git for Windows: https://git-scm.com/download/win
 - SuperClaude: https://github.com/SuperClaude-Org/SuperClaude_Framework
-
----
-
-## Review Follow-ups (AI Review)
-
-### 修复项 (Review 后)
-
-- [x] [AI-Review][HIGH] AC 13: 添加 `--include-cc-switch` 参数或将其加入必需工具列表 [`install.ps1:30-31`]
-- [x] [AI-Review][HIGH] AC 33: 修复 Write-VerboseLog 函数，使用 `$VerbosePreference` 替代 `$PSBoundParameters` [`install.ps1:109-117`]
-- [x] [AI-Review][HIGH] 卸载脚本: 添加并发检测锁文件和中断处理 [`uninstall.ps1:79-133`]
-- [x] [AI-Review][MEDIUM] AC 30: 添加 WhatIf 预览报告模式，显示完整安装预览 [`install.ps1:209-286`]
-- [x] [AI-Review][MEDIUM] 网络: 在切换镜像源前添加明确用户提示 [`install.ps1:169-199`]
-- [x] [AI-Review][MEDIUM] pip/npm: 添加配置验证步骤，不丢弃 Invoke-RetryCommand 结果 [`install.ps1:679-733`]
-- [x] [AI-Review][LOW] AC 17-18: 明确说明用户修改执行策略后的操作流程 [`README.md:58-108`]
-- [x] [AI-Review][LOW] RefreshEnv: 修复重复调用并更新卸载脚本 [`install.ps1:869-1216`, `uninstall.ps1:1-475`]
-
-### 实施完成日期: 2025-12-23
-
----
-
-## AI代码审查发现 (2025-12-23) - 已修复
-
-### 高危问题 (HIGH)
-
-- [x] [AI-Review][HIGH] 文件缺失: uninstall.ps1 不存在 - 技术规范AC 14要求完整卸载功能，但脚本完全缺失 [`install.ps1:152`]
-  > **修复状态**: 已修复。uninstall.ps1 嵌入在 install.ps1 的 `New-UninstallScript` 函数中，安装时自动生成到 `$InstallPath\scripts\uninstall.ps1`
-- [x] [AI-Review][HIGH] 函数重复定义: Write-VerboseLog 在第109行和927行重复定义，导致意外覆盖 [`install.ps1:109,927`]
-  > **修复状态**: 误报。第927行是嵌入的 uninstall.ps1 脚本字符串内容，不是实际的函数重复定义
-- [x] [AI-Review][HIGH] 状态不同步: 技术规范中AC 1-38全部标记为未完成[ ]，但代码已实现大部分功能，存在文档与实现脱节 [`tech-spec:88-134`]
-  > **修复状态**: 已修复。AC 1-38 已全部更新为 `[x]` 完成状态
-
-### 中危问题 (MEDIUM)
-
-- [x] [AI-Review][MEDIUM] 文档不完整: install.ps1未列入Dev Agent Record → File List，但这是主要实现文件 [`tech-spec:152-167`]
-  > **修复状态**: 已修复。已在目录结构下方添加 Dev Agent Record → File List 表格
-- [x] [AI-Review][MEDIUM] 实现缺失: RefreshEnv.cmd在目录结构中列出但实际未找到 [`tech-spec:163`]
-  > **修复状态**: 已修复。RefreshEnv.cmd 嵌入在 install.ps1 的 `New-RefreshEnvScript` 函数中，安装时自动生成
-- [x] [AI-Review][MEDIUM] MirrorMode变量逻辑: 第41行初始化为'official'，第452行直接设置为'mirror'，缺少切换逻辑 [`install.ps1:41,452`]
-  > **修复状态**: 已确认逻辑正确。`$Script:MirrorMode` 初始为 'official'，当 GitHub 不可达时（第452行）直接设置为 'mirror'，这是预期的设计行为
-- [x] [AI-Review][MEDIUM] Git文件变更未记录: install.ps1存在于git但技术规范File List未记录 [`git status vs tech-spec`]
-  > **修复状态**: 已修复。File List 已更新
-
-### 低危问题 (LOW)
-
-- [x] [AI-Review][LOW] 文档与代码不符: 技术规范AC 13说cc-switch为必需，但代码中标记为可选 [`tech-spec:100, install.ps1:65`]
-  > **修复状态**: 已确认。cc-switch 设计为可选工具（可通过 `-IncludeCcSwitch` 参数升级为必需），行为符合预期
-- [ ] [AI-Review][LOW] 缺少项目上下文: 未找到`**/project-context.md`，缺乏编码标准 [`workflow.yaml:25`]
-  > **状态**: 保持开放。项目可以选择不使用 project-context.md
-
-### 审查总结
-
-- **审查文件**: tech-spec-quick-install-claude-code.md
-- **对比文件**: install.ps1 (已分析)
-- **发现总数**: 9个问题
-- **修复完成**: 8个问题已修复，1个问题保持开放
-- **审查者**: smartdddlab (Barry代理)
-- **审查日期**: 2025-12-23
-- **修复日期**: 2025-12-23
-
----
-
-## AI代码审查发现 (2025-12-23) - 二审已修复
-
-### 高危问题 (HIGH) - 二审
-
-- [x] [AI-Review][HIGH] AC 7 & 22: 函数返回后 `$env:SHELL` 失效 [`install.ps1:1397-1406`]
-  > **修复状态**: 已修复。在 `Start-Installation` 函数中，函数调用后重新设置当前会话环境变量
-- [x] [AI-Review][HIGH] WhatIf 模式仍执行网络和Git Bash检测 [`install.ps1:423-487`]
-  > **修复状态**: 已修复。在 `Test-NetworkAndSelectMirror` 和 `Test-And-InstallGitBash` 函数开头添加 WhatIf 模式检查
-- [x] [AI-Review][HIGH] pip/npm 配置验证逻辑缺陷 [`install.ps1:695-737`]
-  > **修复状态**: 已修复。使用 `pip config get` / `npm config get` 验证配置是否生效，不依赖 set 命令返回值
-
-### 中危问题 (MEDIUM) - 二审
-
-- [x] [AI-Review][MEDIUM] 镜像源切换使用变量交换 [`install.ps1:184-186`]
-  > **修复状态**: 已修复。改用 `Clone()` 直接复制，避免变量状态混乱
-- [x] [AI-Review][MEDIUM] 工具验证命令名与包名不匹配 [`install.ps1:1281-1322`]
-  > **修复状态**: 已修复。添加 `python312`、`nodejs-lts` 等备选命令名验证
-- [x] [AI-Review][MEDIUM] 锁文件路径硬编码 [`install.ps1:44-46`]
-  > **修复状态**: 已修复。锁文件路径包含驱动器标识以支持多实例
-
-### 低危问题 (LOW) - 二审
-
-- [ ] [AI-Review][LOW] 缺少项目上下文: 未找到 `**/project-context.md`
-  > **状态**: 保持开放。项目可以选择不使用 project-context.md
-
----
-
-### 二审总结
-
-- **审查文件**: tech-spec-quick-install-claude-code.md vs install.ps1
-- **Git状态**: 全部为新添加文件（未跟踪）
-- **发现总数**: 6个问题 (3 HIGH + 3 MEDIUM + 1 LOW)
-- **修复完成**: 5个问题已修复，1个问题保持开放
-- **审查者**: smartdddlab (Barry代理)
-- **二审日期**: 2025-12-23
-
----
-
-## AI代码审查发现 (2025-12-23) - 三审已修复
-
-### 高危问题 (HIGH) - 三审
-
-- [x] [AI-Review][HIGH] AC 15: SuperClaude 安装未检查 git 依赖 [`install.ps1:832-837`]
-  > **修复状态**: 已修复。在 git clone 前添加 `Get-Command git` 检查，失败时给出明确提示并返回 false
-- [x] [AI-Review][HIGH] Scoop 镜像源配置未验证 [`install.ps1:626-635`]
-  > **修复状态**: 已修复。安装完成后使用 `scoop config` 验证镜像源是否生效
-- [x] [AI-Review][HIGH] cc-switch 未加入工具验证列表 [`install.ps1:1310-1313`]
-  > **修复状态**: 已修复。当 `$Script:ToolsToInstall` 包含 cc-switch 或使用 `-IncludeCcSwitch` 参数时，将其加入验证列表
-
-### 中危问题 (MEDIUM) - 三审
-
-- [x] [AI-Review][MEDIUM] 并发锁路径大小写不一致 [`install.ps1:44-47`]
-  > **修复状态**: 已修复。添加 `.ToUpper().TrimEnd(':')` 确保锁 ID 统一大写且无冒号
-- [x] [AI-Review][MEDIUM] Git Bash 验证命令路径未加引号 [`install.ps1:560`]
-  > **修复状态**: 已修复。执行时使用 `& "$bashPath" --version` 处理带空格的路径
-
-### 低危问题 (LOW) - 三审
-
-- [ ] [AI-Review][LOW] 缺少项目上下文: 未找到 `**/project-context.md`
-  > **状态**: 保持开放。项目可以选择不使用 project-context.md
-
-### 三审总结
-
-- **审查文件**: tech-spec-quick-install-claude-code.md vs install.ps1
-- **Git状态**: 全部为新添加文件（未跟踪）
-- **发现总数**: 5个问题 (3 HIGH + 2 MEDIUM + 1 LOW)
-- **修复完成**: 4个问题已修复，1个问题保持开放
-- **审查者**: smartdddlab (Barry代理)
-- **三审日期**: 2025-12-23
-
----
-
-## AI代码审查发现 (2025-12-23) - 四审已修复
-
-### 高危问题 (HIGH) - 四审
-
-- [x] [AI-Review][HIGH] WhatIf 模式未完全隔离 - Write-VerboseLog、Remove-LockFile、锁文件操作在 WhatIf 模式下仍执行 [`install.ps1:113-124, 220-229, 1412-1420`]
-  > **修复状态**: 已修复。Write-VerboseLog 添加 WhatIf 模式检查跳过日志写入；Remove-LockFile 添加 WhatIf 检查；并发检测在 WhatIf 模式下跳过
-
-### 中危问题 (MEDIUM) - 四审
-
-- [x] [AI-Review][MEDIUM] 重复信号处理器定义 - Initialize-SignalHandler 在卸载脚本和主脚本中都定义 [`install.ps1:1384, 999`]
-  > **修复状态**: 已修复。将卸载脚本中的函数重命名为 `Initialize-UninstallSignalHandler`
-- [x] [AI-Review][MEDIUM] 卸载脚本锁文件路径硬编码 - 无法支持多实例 [`uninstall.ps1:925`]
-  > **修复状态**: 已修复。锁文件路径改为包含安装目录标识：`$env:TEMP\claude-uninstall-{目录名}.lock`
-
-### 低危问题 (LOW) - 四审
-
-- [x] [AI-Review][LOW] 注释与代码不一致 - 注释提到 AC 7 & AC 22 但实际是三审修复 [`install.ps1:1471`]
-  > **修复状态**: 已修复。注释更新为"三审修复: 确保当前会话环境变量在函数返回后仍生效"
-
-### 四审总结
-
-- **审查文件**: tech-spec-quick-install-claude-code.md vs install.ps1
-- **Git状态**: install.ps1 已修改 (4个问题修复)
-- **发现总数**: 4个问题 (1 HIGH + 2 MEDIUM + 1 LOW)
-- **修复完成**: 4个问题全部已修复
-- **审查者**: smartdddlab (Barry代理)
-- **四审日期**: 2025-12-23

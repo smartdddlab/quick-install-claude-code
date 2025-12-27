@@ -10,13 +10,13 @@
 
 本安装器自动化以下工作：
 
-- ✅ 自动检测并安装 Git Bash（如不存在）
 - ✅ 通过 Scoop 包管理器安装开发工具（Git、Python、Node.js 等）
+- ✅ 自动检测并安装 Git Bash（如不存在）
+- ✅ 智能工具检测，跳过已安装项（节省时间和资源）
 - ✅ 智能选择最佳安装驱动器（D/E/F 优先，C 盘兜底）
-- ✅ 自动检测网络环境，配置国内镜像源
+- ✅ 自动检测网络环境（GitHub 可访问性测试）
 - ✅ 配置环境变量（SHELL、CLAUDE_CODE_GIT_BASH_PATH）
 - ✅ 可选安装 SuperClaude 框架
-- ✅ 完整的卸载支持
 
 ## 快速开始（3 步）
 
@@ -54,7 +54,7 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/smartdddlab/quick-inst
 ### 第 3 步：开始使用
 
 安装完成后：
-1. 重启终端或运行 `RefreshEnv.cmd` 刷新环境
+1. 重启终端使环境变量生效
 2. 运行 `claude` 启动 Claude Code
 
 ## 安装前检查
@@ -153,6 +153,7 @@ scoop --version
 | `-WhatIf` | 预览安装过程，不实际执行 | `.\install.ps1 -WhatIf` |
 | `-Verbose` | 显示详细日志 | `.\install.ps1 -Verbose` |
 | `-SkipSuperClaude` | 跳过 SuperClaude 安装 | `.\install.ps1 -SkipSuperClaude` |
+| `-SkipToolCheck` | v1.0: 跳过工具存在性检测 | `.\install.ps1 -SkipToolCheck` |
 | `-InstallDrive <盘符>` | 指定安装驱动器 | `.\install.ps1 -InstallDrive D` |
 | `-InstallDir <目录名>` | 指定安装目录名（默认：smartddd-claude-tools） | `.\install.ps1 -InstallDir mytools` |
 
@@ -167,11 +168,6 @@ scoop --version
 │   │       └── bin\bash.exe    # Git Bash
 │   └── persist\                # 持久化数据
 ├── SuperClaude_Framework\      # SuperClaude 框架（可选）
-├── scripts\                    # 脚本目录
-│   ├── install.ps1            # 安装脚本
-│   ├── uninstall.ps1          # 卸载脚本
-│   └── RefreshEnv.cmd         # 环境刷新
-├── logs\                       # 日志目录
 └── README.md                   # 本文档
 ```
 
@@ -203,13 +199,9 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 ### Q: 安装速度慢怎么办？
 
-安装器已内置镜像源支持：
-- GitHub → mirror.ghproxy.com
-- PyPI → mirrors.aliyun.com/pypi/simple
-- npm → npmmirror.com
-- Scoop → mirrors.tuna.tsinghua.edu.cn/git/scoop.git
+请确保网络连接正常，可以访问 GitHub。如网络较慢，可能需要配置代理或 VPN。
 
-如仍慢，检查网络连接。
+如仍有问题，请查看详细日志：`.\install.ps1 -Verbose`
 
 ### Q: 如何指定安装位置？
 
@@ -232,7 +224,7 @@ SuperClaude 是一个增强 Claude Code 体验的框架，包含：
 
 ### Q: 卸载后环境变量还在？
 
-运行卸载脚本后，请**重启终端**使环境变量更改生效。
+请**重启终端**使环境变量更改生效。
 
 ## 故障排除
 
@@ -245,9 +237,8 @@ SuperClaude 是一个增强 Claude Code 体验的框架，包含：
 
 ### 环境变量不生效
 
-1. 运行刷新脚本：`.\scripts\RefreshEnv.cmd`
-2. 或重启终端
-3. 检查用户级环境变量：
+1. 重启终端
+2. 检查用户级环境变量：
    ```powershell
    [Environment]::GetEnvironmentVariable('SHELL', 'User')
    [Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', 'User')
@@ -270,34 +261,11 @@ Get-ChildItem -Path "C:\", "D:\", "E:\", "F:\" -Filter "bash.exe" -Recurse -Erro
 
 ## 卸载
 
-### 方法 1：使用卸载脚本
-
-```powershell
-# 进入安装目录的 scripts 子目录
-cd {安装路径}\scripts
-
-# 运行卸载
-.\uninstall.ps1
-```
-
-### 方法 2：手动卸载
+手动卸载：
 
 1. 删除安装目录
 2. 删除环境变量：SHELL、CLAUDE_CODE_GIT_BASH_PATH
 3. （可选）删除 Scoop 目录
-
-## 镜像源配置
-
-如需自定义镜像源，可编辑 `install.ps1` 中的 `$Script:Mirrors` 配置：
-
-```powershell
-$Script:Mirrors = @{
-    github = 'https://your-mirror.com/'
-    pypi = 'https://your-pypi-mirror.com/simple/'
-    npm = 'https://your-npm-mirror.com/'
-    scoop = 'https://your-scoop-mirror.git'
-}
-```
 
 ## 系统要求
 
@@ -331,9 +299,7 @@ $Script:Mirrors = @{
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
-| v2.1 | 2025-12-23 | 新增 Shell 自动安装和执行策略检测 |
-| v2.0 | 2025-12-23 | 简化版，移除过度设计 |
-| v1.5 | 2025-12-23 | Party Mode 专家审查 |
+| v1.0 | 2025-12-27 | 稳定版本发布，合并所有历史版本功能 |
 
 ## 参考资料
 

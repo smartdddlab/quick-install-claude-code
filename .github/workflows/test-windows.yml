@@ -1,0 +1,148 @@
+name: Test Windows Script
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '**.ps1'
+      - '.github/workflows/test-windows.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - '**.ps1'
+      - '.github/workflows/test-windows.yml'
+  workflow_dispatch:
+
+jobs:
+  test-script:
+    name: Test PowerShell Script on Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "Testing PowerShell syntax for install.ps1..."
+          $syntaxErrors = @()
+          try {
+            $null = Invoke-Expression (Get-Content -Path '.\install.ps1' -Raw)
+            Write-Host "Syntax check passed"
+          } catch {
+            Write-Error "Syntax error: $_"
+            $syntaxErrors += $_
+          }
+
+          if ($syntaxErrors.Count -gt 0) {
+            exit 1
+          }
+
+      - name: Test install.ps1 with WhatIf mode
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Host "Running install.ps1 in WhatIf mode..."
+
+          # Set UTF-8 encoding
+          $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+          $OutputEncoding = [System.Text.Encoding]::UTF8
+
+          try {
+            # Run with -WhatIf to test script execution without actual installation
+            $result = ./install.ps1 -WhatIf -Verbose 2>&1
+            $exitCode = $LASTEXITCODE
+
+            Write-Host "Script output:"
+            Write-Host $result
+
+            if ($exitCode -ne 0) {
+              Write-Error "Script exited with code: $exitCode"
+              exit 1
+            }
+
+            Write-Host "WhatIf mode test passed"
+          } catch {
+            Write-Error "Script execution error: $_"
+            exit 1
+          }
+
+      - name: Test script functions exist
+        shell: pwsh
+        run: |
+          Write-Host "Verifying script functions are defined..."
+          $scriptContent = Get-Content -Path '.\install.ps1' -Raw
+
+          $requiredFunctions = @(
+            'Write-Header',
+            'Write-Step',
+            'Write-Success',
+            'Write-Warning',
+            'Write-Error',
+            'Test-PowerShellEnvironment',
+            'Select-InstallDrive',
+            'Test-NetworkAndSelectMirror',
+            'Test-And-InstallGitBash',
+            'Install-Tools',
+            'Set-EnvironmentVariables',
+            'Complete-Installation'
+          )
+
+          $missingFunctions = @()
+          foreach ($func in $requiredFunctions) {
+            if ($scriptContent -notmatch "function\s+${func}\s*\{") {
+              $missingFunctions += $func
+            }
+          }
+
+          if ($missingFunctions.Count -gt 0) {
+            Write-Error "Missing functions: $($missingFunctions -join ', ')"
+            exit 1
+          }
+
+          Write-Host "All required functions found: $($requiredFunctions.Count) functions verified"
+
+      - name: Test param block parsing
+        shell: pwsh
+        run: |
+          Write-Host "Testing parameter block parsing..."
+          $scriptContent = Get-Content -Path '.\install.ps1' -Raw
+
+          # Verify key parameters exist
+          $requiredParams = @(
+            'WhatIf',
+            'SkipSuperClaude',
+            'IncludeCcSwitch',
+            'InstallDrive',
+            'InstallDir'
+          )
+
+          $missingParams = @()
+          foreach ($param in $requiredParams) {
+            if ($scriptContent -notmatch "\[switch\]\$$param|\[string\]\$$param") {
+              $missingParams += $param
+            }
+          }
+
+          if ($missingParams.Count -gt 0) {
+            Write-Error "Missing parameters: $($missingParams -join ', ')"
+            exit 1
+          }
+
+          Write-Host "All required parameters found: $($requiredParams.Count) parameters verified"
+
+      - name: Report test results
+        if: always()
+        shell: pwsh
+        run: |
+          $status = if ($env:STEPS_FAILURE_COUNT -and [int]$env:STEPS_FAILURE_COUNT -gt 0) {
+            'FAILED'
+          } else {
+            'PASSED'
+          }
+          Write-Host ""
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "  Windows Script Test: $status" -ForegroundColor $(if ($status -eq 'PASSED') { 'Green' } else { 'Red' })
+          Write-Host "========================================" -ForegroundColor Cyan

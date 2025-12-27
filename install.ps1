@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿# PowerShell 5.1+ required (works with both Windows PowerShell and PowerShell Core)
 #requires -Version 5.1
 
 <#
@@ -40,37 +40,37 @@ param(
     [string]$InstallDir = "smartddd-claude-tools"
 )
 
+#=================== 设置 UTF-8 编码 - 修复中文乱码问题 ===================
+# 注意：此代码必须在 param() 之后，因为 PowerShell 5.1 要求 [CmdletBinding()] 是脚本的第一个语句
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+$OutputEncoding = [System.Text.Encoding]::UTF8
+try {
+    if ([System.Console]::OutputEncoding.CodePage -ne 65001) {
+        chcp 65001 | Out-Null
+    }
+} catch {
+    # 某些环境可能不支持 chcp，忽略错误
+}
+
 #=================== 变量初始化 ===================
 # 处理 $PSScriptRoot 在 irm | iex 场景下未定义的问题
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { $env:TEMP }
 
-$Script:ErrorCount = 0
-$Script:WarningCount = 0
 $Script:InstallSuccess = $false
-$Script:MirrorMode = 'official'  # 'official' or 'mirror'
 $Script:LogFile = "$scriptRoot\install-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+
+#=================== 辅助函数 ===================
+
+# 检查命令是否可用
+function Test-CommandAvailable {
+    param([string]$Command)
+    return $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
+}
 
 # 并发锁文件 - 包含安装目录标识以支持多实例
 # MEDIUM 修复: 统一转换为大写，避免大小写不一致导致的锁失效
 $lockId = if ($InstallDrive) { $InstallDrive.ToUpper().TrimEnd(':') } else { 'AUTO' }
 $Script:LockFilePath = "$env:TEMP\claude-install-${lockId}.lock"
-
-# 镜像源配置（多个备用镜像）
-$Script:MirrorSources = @{
-    primary = @{
-        github = 'https://mirror.ghproxy.com/'
-        pypi = 'https://mirrors.aliyun.com/pypi/simple/'
-        npm = 'https://npmmirror.com/'
-        scoop = 'https://mirrors.tuna.tsinghua.edu.cn/git/scoop.git'
-    }
-    backup = @{
-        github = 'https://ghproxy.net/'
-        pypi = 'https://mirrors.tencent.com/pypi/simple/'
-        npm = 'https://registry.npmmirror.com/'
-        scoop = 'https://gitee.com/mirrors/scoop.git'
-    }
-}
-$Script:Mirrors = $Script:MirrorSources.primary
 
 # 安装工具列表（cc-switch 可能在非默认 bucket）
 # AC 13: 支持 -IncludeCcSwitch 参数将 cc-switch 加入必需工具
@@ -164,7 +164,6 @@ function Invoke-RetryCommand {
     )
 
     $attempt = 0
-    $mirrorSwitched = $false
 
     while ($attempt -lt $MaxRetries) {
         $attempt++
@@ -181,39 +180,6 @@ function Invoke-RetryCommand {
         if ($attempt -lt $MaxRetries) {
             Write-Warning "$Description 失败，${RetryDelay}秒后重试..."
             Start-Sleep -Seconds $RetryDelay
-
-            # AC 37: 失败后切换到备用镜像，添加用户提示
-            # 支持官方源失败时也切换到国内镜像
-            if (-not $mirrorSwitched) {
-                Write-Step "准备切换到备用镜像源..."
-
-                if (-not (Test-WhatIfMode)) {
-                    Write-Host ""
-                    Write-Host "当前镜像源下载失败，是否切换到备用镜像源?" -ForegroundColor Yellow
-                    Write-Host "  当前模式: $($Script:MirrorMode)" -ForegroundColor Gray
-                    Write-Host "  主镜像: $($Script:Mirrors.github)" -ForegroundColor Gray
-                    Write-Host "  备用镜像: $($Script:MirrorSources.backup.github)" -ForegroundColor Gray
-                    Write-Host ""
-                    $response = Read-Host "是否切换? (y/n，默认 y)"
-
-                    if ($response -eq 'n' -or $response -eq 'N') {
-                        Write-Warning "用户取消镜像切换，继续使用当前镜像重试"
-                    } else {
-                        # 无论当前是什么模式，都切换到备用镜像
-                        $Script:MirrorMode = 'mirror'
-                        $Script:Mirrors = $Script:MirrorSources.backup.Clone()
-                        $mirrorSwitched = $true
-                        Write-Success "已切换到备用镜像源"
-                        Write-VerboseLog "新镜像: $($Script:Mirrors.github)"
-                    }
-                } else {
-                    # WhatIf 模式：仅显示
-                    $Script:MirrorMode = 'mirror'
-                    $Script:Mirrors = $Script:MirrorSources.backup.Clone()
-                    $mirrorSwitched = $true
-                    Write-VerboseLog "[WHATIF] 已切换镜像源"
-                }
-            }
         }
     }
 
@@ -263,7 +229,7 @@ function Show-WhatIfPreviewReport {
         return
     }
 
-    $installPath = "${DriveLetter}:\${InstallDir}"
+    $scoopPath = "$env:USERPROFILE\scoop"
 
     Write-Host ""
     Write-Host "╔═══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
@@ -272,8 +238,7 @@ function Show-WhatIfPreviewReport {
     Write-Host ""
 
     Write-Host "【安装配置】" -ForegroundColor Yellow
-    Write-Host "  安装驱动器:     $DriveLetter:\" -ForegroundColor White
-    Write-Host "  安装目录:       $installPath" -ForegroundColor White
+    Write-Host "  Scoop 安装目录: $scoopPath (用户级，无需管理员权限)" -ForegroundColor White
     Write-Host "  日志文件:       $Script:LogFile" -ForegroundColor Gray
     Write-Host ""
 
@@ -291,44 +256,323 @@ function Show-WhatIfPreviewReport {
     Write-Host ""
 
     Write-Host "【环境变量配置】" -ForegroundColor Yellow
-    $bashPath = "${installPath}\scoop\apps\git\current\bin\bash.exe"
+    $bashPath = "$scoopPath\apps\git\current\bin\bash.exe"
     Write-Host "  SHELL                             → $bashPath" -ForegroundColor White
     Write-Host "  CLAUDE_CODE_GIT_BASH_PATH          → $bashPath" -ForegroundColor White
-    Write-Host "  CLAUDE_INSTALL_DRIVE               → $DriveLetter" -ForegroundColor White
-    Write-Host ""
-
-    Write-Host "【镜像源配置】" -ForegroundColor Yellow
-    $mirrorMode = if ($Script:MirrorMode -eq 'mirror') { "国内镜像" } else { "官方源" }
-    Write-Host "  模式:           $mirrorMode" -ForegroundColor White
-    if ($Script:MirrorMode -eq 'mirror') {
-        Write-Host "  GitHub:         $($Script:Mirrors.github)" -ForegroundColor Gray
-        Write-Host "  PyPI:           $($Script:Mirrors.pypi)" -ForegroundColor Gray
-        Write-Host "  npm:            $($Script:Mirrors.npm)" -ForegroundColor Gray
-        Write-Host "  Scoop:          $($Script:Mirrors.scoop)" -ForegroundColor Gray
-    }
+    Write-Host "  CLAUDE_INSTALL_DRIVE               → 用户目录" -ForegroundColor White
     Write-Host ""
 
     $superClaudeStatus = if ($SkipSuperClaude) { "跳过" } else { "安装" }
     Write-Host "【其他选项】" -ForegroundColor Yellow
     Write-Host "  SuperClaude:    $superClaudeStatus" -ForegroundColor White
+    Write-Host "  脚本目录:       $env:USERPROFILE\scripts\" -ForegroundColor Gray
     Write-Host ""
 
-    # 空间估算
-    $drive = Get-PSDrive -Name $DriveLetter
-    $freeSpace = $drive.Free
-    $estimatedSpace = 3GB  # 预估需要约 3GB
-    $remainingSpace = $freeSpace - $estimatedSpace
+    # 空间估算（用户目录所在磁盘）
+    $userDrive = $env:USERPROFILE.Substring(0, 1)
+    $drive = Get-PSDrive -Name $userDrive -ErrorAction SilentlyContinue
+    if ($drive) {
+        $freeSpace = $drive.Free
+        $estimatedSpace = 3GB  # 预估需要约 3GB
+        $remainingSpace = $freeSpace - $estimatedSpace
 
-    Write-Host "【磁盘空间】" -ForegroundColor Yellow
-    Write-Host "  当前可用:      $([math]::Round($freeSpace / 1GB, 2)) GB" -ForegroundColor White
-    Write-Host "  预估需要:      ~3 GB" -ForegroundColor Gray
-    Write-Host "  安装后剩余:    $([math]::Round($remainingSpace / 1GB, 2)) GB" -ForegroundColor $(if ($remainingSpace -lt 1GB) { "Red" } elseif ($remainingSpace -lt 5GB) { "Yellow" } else { "Green" })
+        Write-Host "【磁盘空间】(用户目录所在磁盘)" -ForegroundColor Yellow
+        Write-Host "  当前可用:      $([math]::Round($freeSpace / 1GB, 2)) GB" -ForegroundColor White
+        Write-Host "  预估需要:      ~3 GB" -ForegroundColor Gray
+        Write-Host "  安装后剩余:    $([math]::Round($remainingSpace / 1GB, 2)) GB" -ForegroundColor $(if ($remainingSpace -lt 1GB) { "Red" } elseif ($remainingSpace -lt 5GB) { "Yellow" } else { "Green" })
+    } else {
+        Write-Host "【磁盘空间】" -ForegroundColor Yellow
+        Write-Host "  预估需要:      ~3 GB (用户目录)" -ForegroundColor Gray
+    }
     Write-Host ""
 
     Write-Host "=" * 60 -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "如需实际执行安装，请移除 -WhatIf 参数后重新运行" -ForegroundColor Cyan
     Write-Host ""
+}
+
+#=================== AC 39-48: v2.2/v2.3 工具存在性检测 ===================
+
+# v2.3: 检测工具列表（包含 SkipScoopWhich 标记）
+$Script:ToolChecks = @(
+    @{ Name = "Git";       Command = "git";       VersionCmd = "git --version";       SkipScoopWhich = $false },
+    @{ Name = "Python";    Command = "python";    VersionCmd = "python --version";    SkipScoopWhich = $false },
+    @{ Name = "Node.js";   Command = "node";      VersionCmd = "node --version";      SkipScoopWhich = $false },
+    @{ Name = "Scoop";     Command = "scoop";     VersionCmd = "scoop --version";     SkipScoopWhich = $false },
+    @{ Name = "cc-switch"; Command = "cc-switch"; VersionCmd = "cc-switch version";   SkipScoopWhich = $true }
+)
+
+# v2.3: 检测 Scoop 是否可用
+function Test-ScoopAvailable {
+    $scoopCmd = Get-Command "scoop" -ErrorAction SilentlyContinue
+    return $null -ne $scoopCmd
+}
+
+# v2.3: 使用 scoop which 检测工具
+function Test-ToolWithScoopWhich {
+    param([string]$ToolName)
+
+    try {
+        $result = scoop which $ToolName 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -and $result -match $ToolName) {
+            return @{
+                Exists = $true
+                Method = "scoop which"
+                Path = $result.Trim()
+                Message = "通过 Scoop 安装"
+            }
+        }
+    } catch {
+        Write-VerboseLog "scoop which $ToolName 失败: $_"
+    }
+
+    return @{ Exists = $false }
+}
+
+# v2.3.1: 使用 scoop list 检测工具是否安装（scoop which 失败的备选方案）
+function Test-ToolWithScoopList {
+    param([string]$ToolName)
+
+    try {
+        $listResult = scoop list 2>&1 | Out-String
+        if ($listResult -match $ToolName) {
+            return @{
+                Exists = $true
+                Method = "scoop list"
+                Message = "在 Scoop 中安装，但 scoop which 失败（可能是非标准 shim）"
+            }
+        }
+    } catch {
+        Write-VerboseLog "scoop list $ToolName 失败: $_"
+    }
+
+    return @{ Exists = $false }
+}
+
+# v2.3.1: 检查 Scoop shim 文件是否存在
+function Test-ToolWithScoopShim {
+    param([string]$ToolName)
+
+    $scoopPath = $env:SCOOP
+    if (-not $scoopPath) {
+        $scoopPath = "$env:USERPROFILE\scoop"
+    }
+
+    $shimPaths = @(
+        "$scoopPath\shims\$ToolName.exe",
+        "$scoopPath\shims\$ToolName.ps1",
+        "$scoopPath\shims\$ToolName.cmd",
+        "$scoopPath\shims\$ToolName.bat"
+    )
+
+    foreach ($shimPath in $shimPaths) {
+        if (Test-Path $shimPath) {
+            return @{
+                Exists = $true
+                Method = "shim"
+                Path = $shimPath
+                Message = "Scoop shim 文件存在"
+            }
+        }
+    }
+
+    return @{ Exists = $false }
+}
+
+# v2.3: 命令检测（Get-Command + 执行版本）
+function Test-ToolWithCommand {
+    param(
+        [string]$Command,
+        [string]$VersionCmd
+    )
+
+    # 1. Get-Command 检测
+    $cmd = Get-Command $Command -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        return @{ Exists = $false; Method = "Get-Command" }
+    }
+
+    # 2. 执行版本命令验证
+    try {
+        $output = & $VersionCmd 2>&1 | Out-String
+        if ($output) {
+            return @{
+                Exists = $true
+                Method = "command"
+                Version = $output.Trim()
+                Command = $Command
+                Message = "命令可用"
+            }
+        }
+    } catch {
+        Write-VerboseLog "版本检查失败 ($VersionCmd): $_"
+    }
+
+    return @{
+        Exists = $true
+        Method = "Get-Command"
+        Command = $Command
+        Message = "命令存在，版本检查失败"
+    }
+}
+
+# v2.3: 路径检测（兜底）
+function Test-ToolWithPath {
+    param([string]$ToolName)
+
+    $knownPaths = @{
+        "Git" = @(
+            "$env:USERPROFILE\scoop\apps\git\current\bin\git.exe",
+            "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe",
+            "C:\Program Files\Git\cmd\git.exe",
+            "C:\Program Files (x86)\Git\cmd\git.exe"
+        )
+        "Python" = @(
+            "$env:USERPROFILE\scoop\apps\python312\current\python.exe",
+            "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe",
+            "C:\Python312\python.exe"
+        )
+        "Node.js" = @(
+            "$env:USERPROFILE\scoop\apps\nodejs-lts\current\node.exe",
+            "$env:LOCALAPPDATA\Programs\nodejs\node.exe",
+            "C:\Program Files\nodejs\node.exe"
+        )
+    }
+
+    $paths = $knownPaths[$ToolName]
+    if (-not $paths) {
+        return @{ Exists = $false }
+    }
+
+    foreach ($path in $paths) {
+        if (Test-Path $path) {
+            return @{
+                Exists = $true
+                Method = "path"
+                Path = $path
+                Message = "通过路径检测"
+            }
+        }
+    }
+
+    return @{ Exists = $false }
+}
+
+# v2.3.1: 综合工具检测函数（优先级增强版：scoop which > scoop list > shim > 命令检测 > 路径检测）
+function Test-ToolExists {
+    param(
+        [string]$Name,
+        [string]$Command,
+        [string]$VersionCmd,
+        [bool]$SkipScoopWhich = $false
+    )
+
+    Write-VerboseLog "检测工具: $Name"
+
+    # 优先级 1: scoop which (cc-switch 等跳过)
+    if (-not $SkipScoopWhich -and (Test-ScoopAvailable)) {
+        $scoopWhichResult = Test-ToolWithScoopWhich -ToolName $Command
+        if ($scoopWhichResult.Exists) {
+            Write-VerboseLog "  → scoop which 检测成功"
+            return $scoopWhichResult
+        }
+
+        # v2.3.1: scoop which 失败时，尝试 scoop list 作为备选
+        Write-VerboseLog "  → scoop which 失败，尝试 scoop list..."
+        $scoopListResult = Test-ToolWithScoopList -ToolName $Command
+        if ($scoopListResult.Exists) {
+            Write-VerboseLog "  → scoop list 检测成功（兼容模式）"
+            return $scoopListResult
+        }
+
+        # v2.3.1: 尝试 shim 文件检测
+        Write-VerboseLog "  → scoop list 失败，尝试 shim 文件检测..."
+        $shimResult = Test-ToolWithScoopShim -ToolName $Command
+        if ($shimResult.Exists) {
+            Write-VerboseLog "  → shim 文件检测成功"
+            return $shimResult
+        }
+    }
+
+    # 优先级 2: 命令检测
+    $cmdResult = Test-ToolWithCommand -Command $Command -VersionCmd $VersionCmd
+    if ($cmdResult.Exists) {
+        Write-VerboseLog "  → 命令检测成功"
+        return $cmdResult
+    }
+
+    # 优先级 3: 路径检测（兜底）
+    $pathResult = Test-ToolWithPath -ToolName $Name
+    if ($pathResult.Exists) {
+        Write-VerboseLog "  → 路径检测成功"
+        return $pathResult
+    }
+
+    # v2.3.1: 最后尝试 - 检查 Scoop 应用目录是否存在
+    if (Test-ScoopAvailable) {
+        $scoopPath = $env:SCOOP
+        if (-not $scoopPath) { $scoopPath = "$env:USERPROFILE\scoop" }
+
+        $appPath = "$scoopPath\apps\$Command"
+        if (Test-Path $appPath) {
+            Write-VerboseLog "  → Scoop 应用目录检测成功"
+            return @{
+                Exists = $true
+                Method = "scoop app"
+                Path = $appPath
+                Message = "Scoop 应用目录存在"
+            }
+        }
+    }
+
+    # 未找到
+    Write-VerboseLog "  → 未找到"
+    return @{
+        Exists = $false
+        Method = "none"
+        Message = "未安装"
+    }
+}
+
+# v2.3.1: 批量工具检测
+function Test-AllTools {
+    Write-Host "`n=== 工具存在性检测 (v2.3.1 改进) ===" -ForegroundColor Cyan
+    Write-Host "检测策略: scoop which > scoop list > shim > 命令检测 > 路径检测" -ForegroundColor Gray
+    Write-Host ""
+
+    $script:ToolStatus = @{}
+    $installedCount = 0
+    $skippedCount = 0
+
+    foreach ($tool in $Script:ToolChecks) {
+        $result = Test-ToolExists `
+            -Name $tool.Name `
+            -Command $tool.Command `
+            -VersionCmd $tool.VersionCmd `
+            -SkipScoopWhich $tool.SkipScoopWhich
+
+        $script:ToolStatus[$tool.Name] = $result
+
+        if ($result.Exists) {
+            $installedCount++
+            # PowerShell 5.1 兼容语法（?? 是 PS7+ 语法）
+            $method = if ($result.Method) { $result.Method } else { "unknown" }
+            Write-Host "[已安装] $($tool.Name) [$method]" -ForegroundColor Green
+            if ($result.Version) {
+                Write-Host "         $($result.Version)" -ForegroundColor Gray
+            }
+        } else {
+            $skippedCount++
+            Write-Host "[需安装] $($tool.Name)" -ForegroundColor Yellow
+        }
+    }
+
+    Write-Host ""
+    Write-Host "检测完成: 已安装 $installedCount, 需安装 $skippedCount" -ForegroundColor Cyan
+    Write-Host "使用策略: scoop which 优先，命令检测次之，路径检测兜底" -ForegroundColor Gray
+
+    return $script:ToolStatus
 }
 
 #=================== AC 1-2: PowerShell 版本和执行策略检测 ===================
@@ -439,17 +683,17 @@ function Select-InstallDrive {
     return $driveLetter
 }
 
-#=================== AC 23-26: 网络测试和镜像源选择 ===================
+#=================== AC 23-26: 网络测试 ===================
 
 function Test-NetworkAndSelectMirror {
-    Write-Header "Step 3: 网络测试与镜像源选择"
+    Write-Header "Step 3: 网络测试"
 
     # AC 23-24: GitHub 连通性测试
     # WhatIf 模式: 跳过实际网络测试
     if (Test-WhatIfMode) {
         Write-Host "    [WHATIF] 测试 GitHub 连通性..." -ForegroundColor DarkGray
         Write-Success "[WhatIf] GitHub 连通性测试跳过"
-        return $Script:MirrorMode
+        return $true
     }
 
     Write-Step "测试 GitHub 连通性..."
@@ -486,21 +730,14 @@ function Test-NetworkAndSelectMirror {
         $githubAccessible = $false
     }
 
-    # AC 23: GitHub 可访问用官方源
-    # AC 24: GitHub 不可访问用镜像源
     if ($githubAccessible) {
-        $Script:MirrorMode = 'official'
-        Write-Success "GitHub 可达，使用官方源"
+        Write-Success "GitHub 可达"
     } else {
-        $Script:MirrorMode = 'mirror'
-        Write-Warning "GitHub 不可达，使用国内镜像源"
-        Write-Host "  GitHub: $($Script:Mirrors.github)" -ForegroundColor Cyan
-        Write-Host "  PyPI: $($Script:Mirrors.pypi)" -ForegroundColor Cyan
-        Write-Host "  npm: $($Script:Mirrors.npm)" -ForegroundColor Cyan
-        Write-Host "  Scoop: $($Script:Mirrors.scoop)" -ForegroundColor Cyan
+        Write-Warning "GitHub 不可达，请检查网络连接"
+        Write-Host "  提示: 如无法访问 GitHub，可能需要配置代理或 VPN" -ForegroundColor Cyan
     }
 
-    return $Script:MirrorMode
+    return $githubAccessible
 }
 
 #=================== AC 3-6: Git Bash 检测和安装 ===================
@@ -517,7 +754,7 @@ function Test-And-InstallGitBash {
     if (Test-WhatIfMode) {
         Write-Host "    [WHATIF] 检测 Git Bash..." -ForegroundColor DarkGray
         Write-Host "    [WHATIF] 如不存在则通过 Scoop 安装 Git" -ForegroundColor DarkGray
-        $mockBashPath = "${DriveLetter}:\${InstallDir}\scoop\apps\git\current\bin\bash.exe"
+        $mockBashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
         Write-Success "[WhatIf] Git Bash 检测/安装跳过"
         return $mockBashPath
     }
@@ -526,7 +763,7 @@ function Test-And-InstallGitBash {
     Write-Step "检测 Git Bash..."
 
     $bashPaths = @(
-        "$env:SCOOP\shims\bash.exe",
+        "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe",
         "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe",
         "C:\Program Files\Git\bin\bash.exe",
         "C:\Program Files (x86)\Git\bin\bash.exe"
@@ -566,22 +803,45 @@ function Test-And-InstallGitBash {
         Write-Success "Scoop 已安装"
     }
 
+    # 确保 Scoop 环境变量正确配置
+    Write-Step "配置 Scoop 环境..."
+    $null = Initialize-ScoopEnvironment -DriveLetter $DriveLetter -InstallDir $InstallDir
+
     # 安装 Git
     Write-Step "正在安装 Git (包含 Git Bash)..."
 
     if (Test-WhatIfMode) {
-        Write-Host "    [WHATIF] scoop install git --global" -ForegroundColor DarkGray
-        $bashPath = "${DriveLetter}:\${InstallDir}\scoop\apps\git\current\bin\bash.exe"
+        Write-Host "    [WHATIF] scoop install git --skip-update" -ForegroundColor DarkGray
+        $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
     } else {
         $installGitScript = {
-            scoop install git --global
+            # 使用 --skip-update 参数跳过 Scoop 更新
+            $ErrorActionPreference = 'Continue'
+            scoop install --skip-update git 2>&1 | Tee-Object -Variable installOutput
+            return $LASTEXITCODE
         }.GetNewClosure()
 
         $result = Invoke-RetryCommand -ScriptBlock $installGitScript -Description "Git 安装" -MaxRetries 3
-        $bashPath = "${DriveLetter}:\${InstallDir}\scoop\apps\git\current\bin\bash.exe"
+        $bashPath = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
 
         if ($null -eq $result) {
+            # 额外诊断：检查 Git 是否实际上已安装
+            if (Test-Path $bashPath) {
+                Write-Warning "Git 安装命令返回失败，但 Git Bash 文件已存在，尝试验证..."
+                try {
+                    $testResult = & "$bashPath" --version 2>&1
+                    if ($testResult) {
+                        Write-Success "Git Bash 验证成功: $testResult"
+                        return $bashPath
+                    }
+                } catch {
+                    Write-VerboseLog "Git Bash 验证失败: $_"
+                }
+            }
+
             Write-Error "Git 安装失败"
+            Write-Host "  可能原因: 网络问题或权限不足" -ForegroundColor Cyan
+            Write-Host "  请手动运行: scoop install git" -ForegroundColor Cyan
             return $null
         }
     }
@@ -606,7 +866,33 @@ function Test-And-InstallGitBash {
     }
 }
 
-#=================== Scoop 安装 ===================
+# 确保 Scoop 环境正确配置
+function Initialize-ScoopEnvironment {
+    param([string]$DriveLetter, [string]$InstallDir)
+
+    # 如果 SCOOP 环境变量已设置且有效，直接返回
+    if ($env:SCOOP -and (Test-Path "$env:SCOOP\apps")) {
+        Write-VerboseLog "SCOOP 环境变量已配置: $env:SCOOP"
+        return $true
+    }
+
+    # 尝试从已知路径检测 Scoop（用户级优先）
+    $possibleScoopPaths = @(
+        "$env:USERPROFILE\scoop",
+        "$env:LOCALAPPDATA\scoop"
+    )
+
+    foreach ($path in $possibleScoopPaths) {
+        if (Test-Path "$path\apps") {
+            $env:SCOOP = $path
+            Write-VerboseLog "检测到 Scoop 路径: $path"
+            return $true
+        }
+    }
+
+    Write-Warning "未能检测到有效的 Scoop 安装路径"
+    return $false
+}
 
 function Install-Scoop {
     param(
@@ -617,11 +903,12 @@ function Install-Scoop {
     Write-Step "安装 Scoop 包管理器..."
 
     if (Test-WhatIfMode) {
-        Write-Host "    [WHATIF] 安装 Scoop 到 ${DriveLetter}:\${InstallDir}\scoop" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] 安装 Scoop 到用户目录 ~\scoop" -ForegroundColor DarkGray
         return
     }
 
-    $scoopDir = "${DriveLetter}:\${InstallDir}\scoop"
+    # 用户级安装使用默认目录
+    $scoopDir = "$env:USERPROFILE\scoop"
 
     # 如果已存在 Scoop，跳过
     if (Test-Path "$env:SCOOP") {
@@ -629,17 +916,11 @@ function Install-Scoop {
         return
     }
 
-    # 配置 Scoop 安装路径
+    # 配置 Scoop 安装路径（用户级）
     $env:SCOOP = $scoopDir
 
-    # AC 25 + 37: 使用重试逻辑和镜像切换
+    # AC 25: 使用重试逻辑
     $installScript = {
-        # 配置镜像源
-        if ($Script:MirrorMode -eq 'mirror') {
-            Write-VerboseLog "配置 Scoop 镜像源..."
-            $env:SCOOP_INSTALL_REPO = $Script:Mirrors.scoop
-        }
-
         # 下载并验证安装脚本
         $progressPreference = 'silentlyContinue'
         $scriptContent = Invoke-WebRequest -Uri "https://get.scoop.sh" -TimeoutSec 30 -ErrorAction Stop
@@ -660,17 +941,6 @@ function Install-Scoop {
         throw "Scoop 安装失败"
     }
 
-    # 验证 Scoop 镜像源配置
-    if ($Script:MirrorMode -eq 'mirror') {
-        $scoopConfig = scoop config 2>&1 | Out-String
-        if ($scoopConfig -notmatch $Script:Mirrors.scoop) {
-            Write-Warning "Scoop 镜像源可能未正确配置"
-            Write-VerboseLog "当前 Scoop 配置: $scoopConfig"
-        } else {
-            Write-VerboseLog "Scoop 镜像源配置验证成功"
-        }
-    }
-
     Write-Success "Scoop 安装完成"
 }
 
@@ -682,7 +952,6 @@ function Install-Tools {
     Write-Header "Step 5: 安装开发工具"
 
     # AC 11: 目录名 smartddd-claude-tools
-    # AC 12: pip、npm 使用镜像源
 
     # 安装必需工具
     foreach ($tool in $Script:ToolsToInstall) {
@@ -693,17 +962,33 @@ function Install-Tools {
             continue
         }
 
+        # 检查工具是否已安装
+        $toolCommand = $tool
+        # 特殊处理：python312 的命令是 python
+        if ($tool -eq 'python312') { $toolCommand = 'python' }
+        if ($tool -eq 'nodejs-lts') { $toolCommand = 'node' }
+
+        if (Get-Command $toolCommand -ErrorAction SilentlyContinue) {
+            $version = & $toolCommand --version 2>&1 | Select-Object -First 1
+            Write-Success "$tool 已安装 - $version"
+            continue
+        }
+
         Test-CancellationRequested
 
+        # 跳过 Scoop 更新，直接安装（更新失败不影响安装）
         $installToolScript = {
-            scoop install $tool --global
+            # 使用 --skip-update 参数跳过 Scoop 更新
+            $ErrorActionPreference = 'Continue'
+            scoop install --skip-update $tool 2>&1
+            return $LASTEXITCODE
         }.GetNewClosure()
 
         $result = Invoke-RetryCommand -ScriptBlock $installToolScript -Description "$tool 安装" -MaxRetries 3
 
         if ($null -ne $result) {
             # 获取安装的版本信息
-            $version = & $tool --version 2>&1
+            $version = & $toolCommand --version 2>&1 | Select-Object -First 1
             Write-Success "$tool 安装完成 - $version"
         } else {
             Write-Error "$tool 安装失败"
@@ -719,11 +1004,29 @@ function Install-Tools {
             continue
         }
 
+        # 检查工具是否已安装
+        if (Get-Command $tool -ErrorAction SilentlyContinue) {
+            $version = & $tool --version 2>&1 | Select-Object -First 1
+            Write-Success "$tool 已安装 - $version"
+            continue
+        }
+
         # 检查工具是否在可用 bucket 中
         $searchResult = scoop search $tool 2>&1
         if ($searchResult -match $tool) {
             try {
-                scoop install $tool --global 2>&1 | Out-Null
+                # cc-switch 在 extras bucket，需要先添加
+                if ($tool -eq 'cc-switch') {
+                    $bucketAdded = $false
+                    $buckets = scoop bucket list 2>&1 | Out-String
+                    if ($buckets -notmatch 'extras') {
+                        Write-VerboseLog "添加 extras bucket..."
+                        scoop bucket add extras 2>&1 | Out-Null
+                        $bucketAdded = $true
+                    }
+                }
+
+                scoop install --skip-update $tool 2>&1 | Out-Null
                 Write-Success "$tool 安装完成"
             } catch {
                 Write-Warning "$tool 安装失败，跳过"
@@ -731,62 +1034,6 @@ function Install-Tools {
         } else {
             Write-Warning "$tool 在默认 bucket 中未找到，跳过安装"
             Write-Host "  如需安装，可能需要添加额外 bucket: scoop bucket add <bucket-name>" -ForegroundColor Gray
-        }
-    }
-
-    # 配置 pip 和 npm 镜像源
-    Write-Step "配置 pip/npm 镜像源..."
-    if (Test-WhatIfMode) {
-        Write-Host "    [WHATIF] 配置 pip: $($Script:Mirrors.pypi)" -ForegroundColor DarkGray
-        Write-Host "    [WHATIF] 配置 npm: $($Script:Mirrors.npm)" -ForegroundColor DarkGray
-    } else {
-        # pip 镜像 - 验证配置
-        $pipConfigSuccess = $false
-        if (Get-Command pip -ErrorAction SilentlyContinue) {
-            Write-Step "配置 pip 镜像源..."
-
-            # 先设置配置（不依赖返回值）
-            $null = Invoke-RetryCommand -ScriptBlock {
-                pip config set global.index-url $Script:Mirrors.pypi 2>&1
-            } -Description "pip 镜像配置" -MaxRetries 2
-
-            # 验证 pip 配置 - 使用 get 命令确认配置已生效
-            $verifyPip = pip config get global.index-url 2>&1 | Out-String
-            if ($verifyPip -match $Script:Mirrors.pypi) {
-                $pipConfigSuccess = $true
-                Write-Success "pip 镜像配置已验证: $Script:Mirrors.pypi"
-            } else {
-                Write-Warning "pip 镜像配置可能未生效"
-            }
-        } else {
-            Write-Warning "pip 不可用，跳过镜像配置"
-        }
-
-        # npm 镜像 - 验证配置
-        $npmConfigSuccess = $false
-        if (Get-Command npm -ErrorAction SilentlyContinue) {
-            Write-Step "配置 npm 镜像源..."
-
-            # 先设置配置（不依赖返回值）
-            $null = Invoke-RetryCommand -ScriptBlock {
-                npm config set registry $Script:Mirrors.npm 2>&1
-            } -Description "npm 镜像配置" -MaxRetries 2
-
-            # 验证 npm 配置 - 使用 get 命令确认配置已生效
-            $verifyNpm = npm config get registry 2>&1 | Out-String
-            if ($verifyNpm -match $Script:Mirrors.npm) {
-                $npmConfigSuccess = $true
-                Write-Success "npm 镜像配置已验证: $Script:Mirrors.npm"
-            } else {
-                Write-Warning "npm 镜像配置可能未生效"
-            }
-        } else {
-            Write-Warning "npm 不可用，跳过镜像配置"
-        }
-
-        # 总结配置状态
-        if ($pipConfigSuccess -or $npmConfigSuccess) {
-            Write-Success "镜像源配置完成"
         }
     }
 }
@@ -811,23 +1058,20 @@ function Set-EnvironmentVariables {
 
     Write-Step "设置环境变量..."
 
-    # AC 16: 支持 CLAUDE_INSTALL_DRIVE 环境变量
-    $driveLetter = $InstallPath.Substring(0, 1)
-
     if (Test-WhatIfMode) {
         Write-Host "    [WHATIF] SHELL = $BashPath" -ForegroundColor DarkGray
         Write-Host "    [WHATIF] CLAUDE_CODE_GIT_BASH_PATH = $BashPath" -ForegroundColor DarkGray
-        Write-Host "    [WHATIF] CLAUDE_INSTALL_DRIVE = $driveLetter" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] CLAUDE_INSTALL_DIR = $env:USERPROFILE\scoop" -ForegroundColor DarkGray
     } else {
         # 设置用户级环境变量
         [Environment]::SetEnvironmentVariable('SHELL', $BashPath, 'User')
         [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $BashPath, 'User')
-        [Environment]::SetEnvironmentVariable('CLAUDE_INSTALL_DRIVE', $driveLetter, 'User')
+        [Environment]::SetEnvironmentVariable('CLAUDE_INSTALL_DIR', "$env:USERPROFILE\scoop", 'User')
 
         # 当前会话临时设置
         $env:SHELL = $BashPath
         $env:CLAUDE_CODE_GIT_BASH_PATH = $BashPath
-        $env:CLAUDE_INSTALL_DRIVE = $driveLetter
+        $env:CLAUDE_INSTALL_DIR = "$env:USERPROFILE\scoop"
 
         Write-Success "环境变量已配置"
     }
@@ -837,8 +1081,7 @@ function Set-EnvironmentVariables {
     Write-Host "配置信息:" -ForegroundColor Cyan
     Write-Host "  SHELL=$BashPath"
     Write-Host "  CLAUDE_CODE_GIT_BASH_PATH=$BashPath"
-    Write-Host "  CLAUDE_INSTALL_DRIVE=$driveLetter"
-    Write-Host "  安装目录=$InstallPath"
+    Write-Host "  CLAUDE_INSTALL_DIR=$env:USERPROFILE\scoop"
     Write-Host ""
 
     # AC 34: 当前会话环境变量即时生效
@@ -886,12 +1129,7 @@ function Install-SuperClaude {
         }
 
         # 尝试克隆
-        $repoUrl = if ($Script:MirrorMode -eq 'mirror') {
-            "https://mirror.ghproxy.com/https://github.com/SuperClaude-Org/SuperClaude_Framework.git"
-        } else {
-            "https://github.com/SuperClaude-Org/SuperClaude_Framework.git"
-        }
-
+        $repoUrl = "https://github.com/SuperClaude-Org/SuperClaude_Framework.git"
         git clone $repoUrl $superClaudePath 2>&1
 
         if ($LASTEXITCODE -eq 0) {
@@ -1039,7 +1277,14 @@ function Initialize-UninstallSignalHandler {
         exit 1
     }
 
-    [Console]::CancelKeyPress += $handler
+    # CancelKeyPress 仅在 .NET Core/PowerShell 7+ 中可用
+    try {
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            [Console]::CancelKeyPress += $handler
+        }
+    } catch {
+        Write-VerboseLog "CancelKeyPress 不可用，跳过中断处理"
+    }
 }
 
 function Test-CancellationRequested {
@@ -1112,7 +1357,7 @@ function Confirm-Uninstall {
 
     Write-Host ""
     Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "║       Claude Code 开发环境卸载程序 v2.1                  ║" -ForegroundColor Red
+    Write-Host "║       Claude Code 开发环境卸载程序 v2.3                  ║" -ForegroundColor Red
     Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Red
     Write-Host ""
 
@@ -1238,7 +1483,7 @@ function Complete-Uninstall {
 function Start-Uninstall {
     Write-Host ""
     Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "║       Claude Code 开发环境卸载程序 v2.1                  ║" -ForegroundColor Red
+    Write-Host "║       Claude Code 开发环境卸载程序 v2.3                  ║" -ForegroundColor Red
     Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Red
     Write-Host ""
 
@@ -1345,37 +1590,106 @@ function Complete-Installation {
     Write-Step "验证工具可用性..."
     $allToolsOk = $true
 
-    # 验证必需工具 - 注意命令名与包名可能不同
-    $toolsToVerify = @(
-        @{Name = 'git'; VersionCmd = 'git --version'},
-        @{Name = 'python'; VersionCmd = 'python --version'},
-        @{Name = 'python312'; VersionCmd = 'python312 --version'},
-        @{Name = 'node'; VersionCmd = 'node --version'},
-        @{Name = 'nodejs-lts'; VersionCmd = 'node --version'},
-        @{Name = 'scoop'; VersionCmd = 'scoop --version'}
-    )
+    # v2.3.4: 使用 scoop list 验证 scoop 安装的工具（与安装步骤保持一致）
+    # 获取 scoop list 输出用于查找版本信息
+    $scoopListOutput = $null
+    if (Get-Command scoop -ErrorAction SilentlyContinue) {
+        $scoopListOutput = scoop list 2>&1 | Out-String
+    }
+
+    # 验证工具列表 - 使用 scoop 包名
+    # v2.3.8: PowerShell 5.1 兼容，键名必须用引号包裹
+    # 注意: Name 使用小写，以便与 coreToolsOk 检查兼容
+    $toolsToVerifyMap = @{}
+    $toolsToVerifyMap['git'] = @{Name = 'git';       Package = 'git';       Command = 'git';       InstalledByScoop = $true }
+    $toolsToVerifyMap['python312'] = @{Name = 'python'; Package = 'python312'; Command = 'python'; InstalledByScoop = $true }
+    $toolsToVerifyMap['nodejs-lts'] = @{Name = 'node'; Package = 'nodejs-lts'; Command = 'node'; InstalledByScoop = $true }
+    $toolsToVerifyMap['scoop'] = @{Name = 'scoop';   Package = 'scoop';    Command = 'scoop';    InstalledByScoop = $false }
 
     # AC 13: 如果安装了 cc-switch，也需要验证
     if ($Script:ToolsToInstall -contains 'cc-switch' -or $IncludeCcSwitch) {
-        $toolsToVerify += @{Name = 'cc-switch'; VersionCmd = 'cc-switch --version'}
+        $toolsToVerifyMap['cc-switch'] = @{Name = 'cc-switch'; Package = 'cc-switch'; Command = 'cc-switch'; InstalledByScoop = $true}
     }
 
     $verifiedTools = @{}
+    $verifiedCount = 0
+    $totalCount = $toolsToVerifyMap.Count
 
-    foreach ($tool in $toolsToVerify) {
-        $cmd = Get-Command $tool.VersionCmd.Split(' ')[0] -ErrorAction SilentlyContinue
-        if ($cmd) {
-            try {
-                $version = & $tool.VersionCmd 2>&1 | Select-Object -First 1
-                if ($version) {
-                    Write-Success "$($tool.Name) 可用 - $version"
-                    $verifiedTools[$tool.Name] = $true
+    foreach ($tool in $toolsToVerifyMap.Values) {
+        $packageName = $tool.Package
+        $displayName = $tool.Name
+        $commandName = $tool.Command
+
+        # v2.3.8: 先尝试 scoop list 验证 scoop 安装的工具
+        $foundViaScoopList = $false
+        if ($tool.InstalledByScoop -and $scoopListOutput) {
+            $lines = $scoopListOutput -split "`n"
+            foreach ($line in $lines) {
+                # 跳过表头、分隔线、空行和 bucket 区域
+                if ($line -match '^(Package|------|\s*$)') { continue }
+                if ($line -match "Current Scoop version:|'main' bucket:|'extras' bucket:|Installed apps:") { continue }
+
+                # 匹配包名
+                if ($line -match [regex]::Escape($packageName)) {
+                    # 提取版本号 - 查找包名后面以数字开头的版本
+                    $version = $null
+                    $idx = $line.IndexOf($packageName)
+                    if ($idx -ge 0) {
+                        $rest = $line.Substring($idx + $packageName.Length).Trim()
+                        # 提取版本号（数字开头，到空格或 [ 结束）
+                        if ($rest -match '^([0-9][^\s\[]*)') {
+                            $version = $matches[1]
+                        }
+                    }
+
+                    if ($version) {
+                        Write-Success "$displayName 可用 (Scoop) - $version"
+                    } else {
+                        Write-Success "$displayName 可用 (Scoop)"
+                    }
+                    $verifiedTools[$displayName] = $true
+                    $verifiedCount++
+                    $foundViaScoopList = $true
+                    break
                 }
-            } catch {
-                Write-Warning "$($tool.Name) 命令存在但获取版本失败"
             }
         }
+
+        if ($foundViaScoopList) { continue }
+
+        # v2.3.8: scoop list 验证失败，使用命令检测作为兜底
+        $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($cmd) {
+            try {
+                $ErrorActionPreference = 'Continue'
+                $output = & $commandName --version 2>&1 | Out-String
+                $ErrorActionPreference = 'Stop'
+                $versionOutput = $output.Trim()
+
+                # 过滤 scoop 版本输出中的 bucket 信息
+                if ($commandName -eq 'scoop') {
+                    $versionLines = $versionOutput -split "`n" | Where-Object { $_ -match '\S' }
+                    $versionOutput = $versionLines[0]
+                }
+
+                if ($versionOutput) {
+                    Write-Success "$displayName 可用 - $versionOutput"
+                    $verifiedTools[$displayName] = $true
+                    $verifiedCount++
+                } else {
+                    Write-Warning "$displayName 命令存在但获取版本失败"
+                }
+            } catch {
+                Write-Warning "$displayName 命令存在但获取版本失败"
+            }
+        } else {
+            Write-Warning "$displayName 未安装"
+        }
     }
+
+    # v2.3.8: 显示验证统计（scoop list + 命令兜底）
+    Write-Host ""
+    Write-Host "验证统计: $verifiedCount/$totalCount 个工具可用" -ForegroundColor $(if ($verifiedCount -eq $totalCount) { 'Green' } else { 'Yellow' })
 
     # 检查核心工具是否至少有一个可用
     $coreToolsOk = $verifiedTools.ContainsKey('git') -and (
@@ -1397,15 +1711,14 @@ function Complete-Installation {
     Write-Host "  安装完成!" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "安装路径: $InstallPath" -ForegroundColor Green
     Write-Host "日志文件: $Script:LogFile" -ForegroundColor Gray
     Write-Host ""
     Write-Host "下一步操作:" -ForegroundColor Yellow
     Write-Host "  1. 重启终端或运行 RefreshEnv.cmd 刷新环境" -ForegroundColor Cyan
-    Write-Host "  2. Claude Code CLI 通常为 'cc' 或 'claude-code'" -ForegroundColor Cyan
-    Write-Host "  3. 运行 'cc --help' 或 'claude-code --help' 验证" -ForegroundColor Cyan
+    Write-Host "  2. Claude Code CLI 命令为 'claude'" -ForegroundColor Cyan
+    Write-Host "  3. 运行 'claude --help' 验证" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "如需卸载，运行: $InstallPath\scripts\uninstall.ps1" -ForegroundColor Cyan
+    Write-Host "如需卸载，运行: $env:USERPROFILE\scripts\uninstall.ps1" -ForegroundColor Cyan
     Write-Host ""
 
     # AC 32: 快速入门指引
@@ -1429,16 +1742,23 @@ function Initialize-SignalHandler {
         Write-Host "用户中断请求..." -ForegroundColor Yellow
     }
 
-    [Console]::CancelKeyPress += $handler
+    # CancelKeyPress 仅在 .NET Core/PowerShell 7+ 中可用
+    try {
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            [Console]::CancelKeyPress += $handler
+        }
+    } catch {
+        Write-VerboseLog "CancelKeyPress 不可用，跳过中断处理"
+    }
 }
 
 #=================== 主流程 ===================
 
 function Start-Installation {
     Write-Host ""
-    Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║       Claude Code Windows 一键安装器 v2.1                  ║" -ForegroundColor Cyan
-    Write-Host "║       Author: SmartDDD Lab                                ║" -ForegroundColor Cyan
+    Write-Host "╔════════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║       Claude Code Windows 一键安装器 v2.3.8                      ║" -ForegroundColor Cyan
+    Write-Host "║       Author: SmartDDD Lab                                      ║" -ForegroundColor Cyan
     Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""
 
@@ -1507,26 +1827,19 @@ function Start-Installation {
         $null = Set-EnvironmentVariables -BashPath $bashPath -InstallPath $installPath
 
         # 三审修复: 确保当前会话环境变量在函数返回后仍生效 (解决 AC 7 & AC 22 失效问题)
-        $bashPathFinal = "${installPath}\scoop\apps\git\current\bin\bash.exe"
+        $bashPathFinal = "$env:USERPROFILE\scoop\apps\git\current\bin\bash.exe"
         $env:SHELL = $bashPathFinal
         $env:CLAUDE_CODE_GIT_BASH_PATH = $bashPathFinal
-        $env:CLAUDE_INSTALL_DRIVE = $driveLetter
+        $env:CLAUDE_INSTALL_DIR = "$env:USERPROFILE\scoop"
 
-        # Step 7: SuperClaude
+        # Step 7: SuperClaude (安装到用户目录)
         Test-CancellationRequested
-        $null = Install-SuperClaude -InstallPath $installPath
+        $superClaudePath = "$env:USERPROFILE\SuperClaude_Framework"
+        $null = Install-SuperClaude -InstallPath $superClaudePath
 
-        # Step 8: 创建卸载脚本
+        # Step 8: 完成（卸载脚本和刷新脚本功能已移除）
         Test-CancellationRequested
-        New-UninstallScript -InstallPath $installPath
-
-        # Step 9: 创建刷新脚本
-        Test-CancellationRequested
-        New-RefreshEnvScript -InstallPath $installPath
-
-        # Step 10: 完成
-        Test-CancellationRequested
-        $Script:InstallSuccess = Complete-Installation -InstallPath $installPath -BashPath $bashPath
+        $Script:InstallSuccess = Complete-Installation -InstallPath "$env:USERPROFILE\scoop" -BashPath $bashPath
 
         # 输出摘要
         Write-Host ""
@@ -1535,7 +1848,7 @@ function Start-Installation {
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "  错误: $Script:ErrorCount" -ForegroundColor $(if ($Script:ErrorCount -gt 0) { 'Red' } else { 'Green' })
         Write-Host "  警告: $Script:WarningCount" -ForegroundColor Yellow
-        Write-Host "  安装路径: $installPath" -ForegroundColor Cyan
+        Write-Host "  Scoop 目录: $env:USERPROFILE\scoop" -ForegroundColor Cyan
         Write-Host "  日志文件: $Script:LogFile" -ForegroundColor Gray
         Write-Host "========================================" -ForegroundColor Cyan
     } finally {

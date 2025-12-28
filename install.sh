@@ -423,24 +423,36 @@ install_superclaude() {
         return 1
     fi
 
-    # 创建虚拟环境并激活（确保 Python 和 pip 可用）
+    # 创建虚拟环境
     local venv_dir="$HOME/.cache/superclaude-venv"
     if [ ! -d "$venv_dir" ]; then
         uv venv "$venv_dir" --python python3.12
     fi
 
-    # 激活虚拟环境
-    # shellcheck source=/dev/null
-    . "$venv_dir/bin/activate"
-    log_info "已激活虚拟环境: $venv_dir"
+    # 在虚拟环境 bin 目录中创建 symlink 到系统 PATH 目录
+    # 这样 command -v python3 就能找到虚拟环境中的 Python
+    local venv_bin="$venv_dir/bin"
+    local symlink_dir="$HOME/.local/bin"
 
-    # 确保 pip 可用（uv venv 默认包含 pip）
-    if ! command -v pip3 >/dev/null 2>&1; then
-        log_warn "pip 未找到，尝试安装..."
-        uv pip install pip
+    # 确保 symlink 目录存在
+    mkdir -p "$symlink_dir"
+
+    # 创建 python3 和 pip3 的 symlink（如果不存在）
+    if [ ! -e "$symlink_dir/python3" ]; then
+        ln -sf "$venv_bin/python3" "$symlink_dir/python3"
+        log_info "创建 python3 symlink: $symlink_dir/python3 -> $venv_bin/python3"
     fi
 
-    # 现在 python3 和 pip 应该可用了
+    if [ ! -e "$symlink_dir/pip3" ]; then
+        ln -sf "$venv_bin/pip3" "$symlink_dir/pip3"
+        log_info "创建 pip3 symlink: $symlink_dir/pip3 -> $venv_bin/pip3"
+    fi
+
+    # 将 symlink 目录添加到 PATH 前置
+    export PATH="$symlink_dir:$PATH"
+    log_info "PATH 已包含: $symlink_dir"
+
+    # 现在 npm install 时，SuperClaude 的 install.js 应该能找到正确的 python3 和 pip3
     npm install -g @bifrost_inc/superclaude
 
     # 初始化 SuperClaude

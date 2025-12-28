@@ -684,31 +684,25 @@ jobs:
     steps:
       - name: Check all jobs status
         run: |
-          set +e  # 禁用错误时立即退出
-
           echo ""
           echo "========================================"
           echo "  Test Summary"
           echo "========================================"
           echo ""
 
-          # 获取所有 jobs 的 JSON 数据
-          jobs_json=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --paginate 2>/dev/null)
-          [ -z "$jobs_json" ] && jobs_json="{}"
-
           all_passed=true
 
-          # 检查每个 job 的状态
-          for keyword in "Static Analysis" "Alpine" "Ubuntu" "Logic Validation" "Test on Linux" "Test on macOS"; do
-            status=$(echo "$jobs_json" | grep -o "\"conclusion\": \"[^\"]*\"" 2>/dev/null | grep -B1 "$keyword" 2>/dev/null | grep "conclusion" 2>/dev/null | cut -d'"' -f4 | head -1)
-            if [ -z "$status" ]; then
-              status="skipped"
-            fi
-            echo "  $keyword: $status"
-            if [ "$status" != "success" ]; then
+          # 使用 gh run view --json 直接获取 jobs 信息
+          jobs_info=$(gh run view ${{ github.run_id }} --json jobs -q '.jobs[] | "\(.name)|\(.conclusion)"' 2>/dev/null || echo "")
+
+          # 检查每个期望的 job，使用 process substitution 避免子 shell 问题
+          while IFS='|' read -r name conclusion; do
+            [ -z "$name" ] && continue
+            echo "  $name: $conclusion"
+            if [ "$conclusion" != "success" ]; then
               all_passed=false
             fi
-          done
+          done <<< "$jobs_info"
 
           echo ""
           if [ "$all_passed" = true ]; then

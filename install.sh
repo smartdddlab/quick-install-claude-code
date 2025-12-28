@@ -25,6 +25,9 @@ USE_CHINA_MIRROR="${CLAUDE_USE_CHINA_MIRROR:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
+# 确保 PATH 包含 uv 安装的工具（Python 等）
+export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+
 # 日志函数
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }

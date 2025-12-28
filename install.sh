@@ -417,8 +417,19 @@ install_superclaude() {
         return 0
     fi
 
-    # npm 安装时传递 PATH 环境变量，确保 postinstall 脚本能检测到 Python
-    env "PATH=$PATH" npm install -g @bifrost_inc/superclaude
+    # 确保 uv 可用且 Python 3.12 已安装
+    if ! command_exists uv; then
+        log_error "uv 未安装，无法安装 SuperClaude"
+        return 1
+    fi
+
+    # 使用 uv 确保 Python 3.12 可用
+    if ! uv python list | grep -q "3.12"; then
+        uv python install 3.12
+    fi
+
+    # 通过 uv 运行 npm，uv 会自动设置正确的 Python 环境
+    uv npm install -g @bifrost_inc/superclaude
 
     # 初始化 SuperClaude
     if command_exists superclaude; then

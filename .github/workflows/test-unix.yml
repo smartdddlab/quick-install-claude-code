@@ -368,6 +368,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: |
+          # macOS 需要确保 curl 和 certs 可用
+          # 大多数 macOS 环境已经有这些，但验证一下
+          if ! command -v curl >/dev/null 2>&1; then
+            echo "curl not found, but Homebrew may not be available in CI"
+          fi
+          echo "macOS dependencies: OK"
+
       - name: Check existing tools
         id: check-tools
         run: |

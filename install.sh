@@ -114,8 +114,22 @@ check_dependencies() {
         missing_deps+=("git")
     fi
 
-    if ! command_exists ca-certificates; then
-        # Debian/Ubuntu
+    # 检查 CA 证书文件（不同系统位置不同）
+    local ca_cert_found=false
+    for cert_file in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-certificates.pem /etc/pki/tls/cacert.pem; do
+        if [ -f "$cert_file" ]; then
+            ca_cert_found=true
+            break
+        fi
+    done
+
+    # macOS 系统通常不需要单独安装 ca-certificates
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        ca_cert_found=true
+    fi
+
+    if [ "$ca_cert_found" = false ]; then
+        # Debian/Ubuntu/Fedora 等
         missing_deps+=("ca-certificates")
     fi
 

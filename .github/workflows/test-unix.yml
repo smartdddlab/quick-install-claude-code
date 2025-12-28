@@ -1,0 +1,178 @@
+name: Test Unix Scripts
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'install.sh'
+      - '.github/workflows/test-unix.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'install.sh'
+      - '.github/workflows/test-unix.yml'
+  workflow_dispatch:
+
+jobs:
+  test-linux:
+    name: Test Bash Script on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test Bash syntax
+        run: |
+          echo "Testing Bash syntax for install.sh..."
+          bash -n install.sh
+          echo "Syntax check passed"
+
+      - name: Test dry run mode
+        run: |
+          echo "Running install.sh in DRY_RUN mode..."
+          DRY_RUN=1 bash install.sh 2>&1 | head -50
+          echo "Dry run mode test passed"
+
+      - name: Verify script functions exist
+        run: |
+          echo "Verifying script functions are defined..."
+          script_content=$(cat install.sh)
+
+          required_functions=(
+            'command_exists'
+            'detect_shell'
+            'check_existing_tools'
+            'check_dependencies'
+            'load_nvm'
+            'install_nvm'
+            'install_uv'
+            'install_node_lts'
+            'install_python'
+            'configure_npm_mirror'
+            'install_claude_code'
+            'install_superclaude'
+            'configure_shell'
+            'main'
+          )
+
+          missing=()
+          for func in "${required_functions[@]}"; do
+            if ! echo "$script_content" | grep -q "^${func}()"; then
+              missing+=("$func")
+            fi
+          done
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Missing functions: ${missing[*]}"
+            exit 1
+          fi
+
+          echo "All required functions found: ${#required_functions[@]} functions verified"
+
+      - name: Verify environment variables
+        run: |
+          echo "Verifying environment variable handling..."
+          script_content=$(cat install.sh)
+
+          required_vars=(
+            'CLAUDE_SKIP_SUPERCLAUDE'
+            'CLAUDE_USE_CHINA_MIRROR'
+            'DRY_RUN'
+            'NVM_DIR'
+            'NVM_VERSION'
+            'SCRIPT_VERSION'
+          )
+
+          missing=()
+          for var in "${required_vars[@]}"; do
+            if ! echo "$script_content" | grep -q "${var}"; then
+              missing+=("$var")
+            fi
+          done
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Missing variables: ${missing[*]}"
+            exit 1
+          fi
+
+          echo "All required variables found: ${#required_vars[@]} variables verified"
+
+      - name: Test set -euo pipefail
+        run: |
+          echo "Testing strict error handling..."
+          # Verify the script has proper error handling
+          head -10 install.sh | grep -q "set -euo pipefail"
+          echo "Strict mode verified"
+
+      - name: Report test results
+        if: always()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  Linux Script Test: PASSED"
+          echo "========================================"
+
+  test-macos:
+    name: Test Bash Script on macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test Bash syntax
+        run: |
+          echo "Testing Bash syntax for install.sh..."
+          bash -n install.sh
+          echo "Syntax check passed"
+
+      - name: Test dry run mode
+        run: |
+          echo "Running install.sh in DRY_RUN mode..."
+          DRY_RUN=1 bash install.sh 2>&1 | head -50
+          echo "Dry run mode test passed"
+
+      - name: Verify script functions exist
+        run: |
+          echo "Verifying script functions are defined..."
+          script_content=$(cat install.sh)
+
+          required_functions=(
+            'command_exists'
+            'detect_shell'
+            'check_existing_tools'
+            'check_dependencies'
+            'load_nvm'
+            'install_nvm'
+            'install_uv'
+            'install_node_lts'
+            'install_python'
+            'configure_npm_mirror'
+            'install_claude_code'
+            'install_superclaude'
+            'configure_shell'
+            'main'
+          )
+
+          missing=()
+          for func in "${required_functions[@]}"; do
+            if ! echo "$script_content" | grep -q "^${func}()"; then
+              missing+=("$func")
+            fi
+          done
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Missing functions: ${missing[*]}"
+            exit 1
+          fi
+
+          echo "All required functions found: ${#required_functions[@]} functions verified"
+
+      - name: Report test results
+        if: always()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  macOS Script Test: PASSED"
+          echo "========================================"

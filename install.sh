@@ -538,6 +538,57 @@ install_superclaude() {
     fi
 }
 
+# 安装 cc-switch
+install_cc_switch() {
+    log_step "安装 cc-switch..."
+
+    # 检查是否已安装
+    if command_exists cc-switch; then
+        log_info "cc-switch 已安装: $(cc-switch --version 2>/dev/null || echo 'installed')"
+        return 0
+    fi
+
+    # macOS 系统使用 brew 安装
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if command_exists brew; then
+            log_info "通过 Homebrew 安装 cc-switch..."
+            if [ "$DRY_RUN" == "1" ]; then
+                log_debug "brew tap farion1231/ccswitch && brew install --cask cc-switch"
+                return 0
+            fi
+
+            brew tap farion1231/ccswitch
+            brew install --cask cc-switch
+
+            if command_exists cc-switch; then
+                log_info "cc-switch 安装完成: $(cc-switch --version)"
+                return 0
+            else
+                log_warn "cc-switch 安装验证失败"
+                return 1
+            fi
+        else
+            log_warn "未检测到 Homebrew，请通过以下方式安装 cc-switch:"
+            echo "  方式一（推荐）: 安装 Homebrew 后运行"
+            echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            echo "    brew tap farion1231/ccswitch"
+            echo "    brew install --cask cc-switch"
+            echo ""
+            echo "  方式二: 手动下载"
+            echo "    https://github.com/farion1231/cc-switch/releases"
+            return 0
+        fi
+    else
+        # 非 macOS 系统
+        log_info "cc-switch 仅支持 macOS 系统"
+        echo ""
+        echo "如需在非 macOS 系统使用 cc-switch，请通过以下方式:"
+        echo "  手动下载: https://github.com/farion1231/cc-switch/releases"
+        echo ""
+        return 0
+    fi
+}
+
 # ================================================
 # Phase 4: 环境配置
 # ================================================
@@ -635,7 +686,10 @@ main() {
     # 9. 安装 SuperClaude (可选)
     install_superclaude
 
-    # 10. 环境配置
+    # 10. 安装 cc-switch (仅 macOS)
+    install_cc_switch
+
+    # 11. 环境配置
     configure_shell
 
     echo ""

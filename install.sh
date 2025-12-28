@@ -202,7 +202,7 @@ load_nvm() {
 install_nvm() {
     log_step "安装 nvm $NVM_VERSION..."
     if [ "$DRY_RUN" == "1" ]; then
-        log_debug "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash"
+        log_debug "git clone https://gitee.com/mirrors/nvm.git \$NVM_DIR && cd \$NVM_DIR && git checkout $NVM_VERSION"
         return 0
     fi
 
@@ -210,9 +210,19 @@ install_nvm() {
     if [ -d "$NVM_DIR" ]; then
         log_info "nvm 已安装于 $NVM_DIR"
     else
-        # 下载并执行 nvm 安装脚本
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash
-        log_info "nvm 安装完成"
+        # 使用 Gitee 镜像源下载 nvm（国内网络加速）
+        log_info "从 Gitee 镜像下载 nvm..."
+        git clone --depth 1 https://gitee.com/mirrors/nvm.git "$NVM_DIR" 2>/dev/null || {
+            # 如果 git clone 失败，回退到 curl 方式
+            log_warn "Gitee 下载失败，尝试使用官方源..."
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash
+        }
+
+        if [ -d "$NVM_DIR" ]; then
+            log_info "nvm 下载完成"
+            # 检出指定版本
+            cd "$NVM_DIR" && git fetch --depth 1 origin "$NVM_VERSION" && git checkout "$NVM_VERSION" 2>/dev/null || true
+        fi
     fi
 
     # 加载 nvm (必须在全局 scope 加载，因为 nvm 是通过函数定义的)

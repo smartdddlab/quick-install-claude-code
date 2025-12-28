@@ -20,6 +20,7 @@ NC='\033[0m' # No Color
 
 # 默认配置
 SKIP_SUPERCLAUDE="${CLAUDE_SKIP_SUPERCLAUDE:-0}"
+SKIP_CLAUDE_CODE="${SKIP_CLAUDE_CODE:-0}"
 USE_CHINA_MIRROR="${CLAUDE_USE_CHINA_MIRROR:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -300,6 +301,12 @@ configure_npm_mirror() {
 
 # 安装 Claude Code
 install_claude_code() {
+    # 检查是否跳过 Claude Code 安装
+    if [ "$SKIP_CLAUDE_CODE" == "1" ]; then
+        log_warn "跳过 Claude Code 安装（SKIP_CLAUDE_CODE=1）"
+        return 0
+    fi
+
     if command_exists claude; then
         local version
         version=$(claude --version 2>/dev/null | head -1 || echo "installed")

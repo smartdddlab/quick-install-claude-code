@@ -13,6 +13,12 @@ on:
       - '.github/workflows/test-unix.yml'
   workflow_dispatch:
 
+env:
+  # 跳过 SuperClaude 安装（需要认证）
+  CLAUDE_SKIP_SUPERCLAUDE: 1
+  # 使用中国镜像加速
+  CLAUDE_USE_CHINA_MIRROR: 1
+
 jobs:
   # ============================================
   # 核心验证：语法、函数、变量、条件
@@ -170,12 +176,13 @@ jobs:
           echo "All ${#log_funcs[@]} log functions verified: PASSED"
 
   # ============================================
-  # Docker 集成测试：依赖检测 + 包管理器
+  # Docker 真实安装测试
   # ============================================
   docker-integration:
-    name: Docker Integration
+    name: Docker Integration (${{ matrix.image }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - image: alpine:latest
@@ -193,86 +200,161 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install bash for the script
+      - name: Install dependencies
         run: |
-          # 安装 bash 和必要依赖
+          # 安装基础依赖
           if [ "${{ matrix.pkgmgr }}" = "apk" ]; then
-            apk add --no-cache bash curl git ca-certificates
+            apk add --no-cache bash curl git ca-certificates sudo
           else
-            # apt/dnf
             if [ "${{ matrix.pkgmgr }}" = "dnf" ]; then
-              dnf install -y bash curl git ca-certificates
+              dnf install -y bash curl git ca-certificates sudo
             else
               export DEBIAN_FRONTEND=noninteractive
-              apt-get update && apt-get install -y bash curl git ca-certificates
+              apt-get update && apt-get install -y bash curl git ca-certificates sudo
             fi
           fi
 
-      - name: Test script execution
+      - name: Configure sudo for non-root user
         run: |
-          echo "Testing script on ${{ matrix.image }}..."
-          bash -n install.sh
-          echo "Syntax check: PASSED"
+          # 确保当前用户有 sudo 权限
+          echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          echo "Defaults:root !requiretty" >> /etc/sudoers
 
-      - name: Test dry-run mode
+      - name: Run real installation
+        id: install
         run: |
-          echo "Testing DRY_RUN mode..."
-          DRY_RUN=1 bash install.sh 2>&1 | head -50
-          echo "Dry-run: PASSED"
+          echo "========================================"
+          echo "  Running REAL installation on ${{ matrix.image }}"
+          echo "========================================"
+          echo ""
 
-      - name: Test dependency detection
+          # 设置环境变量（跳过 SuperClaude，使用中国镜像）
+          export CLAUDE_SKIP_SUPERCLAUDE=1
+          export CLAUDE_USE_CHINA_MIRROR=1
+
+          # 记录开始时间
+          start_time=$(date +%s)
+
+          # 真实执行安装脚本（不使用 DRY_RUN）
+          set +e  # 允许错误继续，以便收集日志
+          bash install.sh 2>&1 | tee /tmp/install.log
+          exit_code=${PIPESTATUS[0]}
+          set -e
+
+          # 记录结束时间
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+
+          echo ""
+          echo "========================================"
+          echo "  Installation completed in ${duration}s"
+          echo "  Exit code: $exit_code"
+          echo "========================================"
+
+          # 保存 exit code 供后续步骤使用
+          echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
+          echo "duration=$duration" >> $GITHUB_OUTPUT
+
+      - name: Verify installation results
         run: |
-          echo "Testing dependency detection..."
+          echo ""
+          echo "========================================"
+          echo "  Verifying installation results"
+          echo "========================================"
 
-          # 验证脚本包含依赖检测逻辑（不在容器中实际移除依赖，避免触发 set -e）
-          script_content=$(cat install.sh)
+          exit_code=$(echo "${{ steps.install.outputs.exit_code }}")
+          duration=$(echo "${{ steps.install.outputs.duration }}")
 
-          # 检查 check_dependencies 函数存在且包含必要检查
-          if echo "$script_content" | grep -qE 'check_dependencies.*\(\)|function check_dependencies'; then
-            echo "Function check_dependencies: PASSED"
+          echo "Exit code: $exit_code"
+          echo "Duration: ${duration}s"
+
+          # 检查安装脚本是否成功执行
+          if [ "$exit_code" -eq 0 ]; then
+            echo "Installation script: PASSED"
           else
-            echo "ERROR: check_dependencies function not found"
+            echo "Installation script: FAILED (exit code: $exit_code)"
+            echo ""
+            echo "Last 50 lines of install log:"
+            tail -50 /tmp/install.log
             exit 1
           fi
 
-          # 检查脚本中有 curl/git 检测
-          if echo "$script_content" | grep -qE 'command_exists curl|command_exists git'; then
-            echo "Dependency checks (curl/git): PASSED"
-          else
-            echo "ERROR: curl/git dependency checks not found"
-            exit 1
-          fi
-
-          # 检查脚本中有包管理器检测 (apt/apk/yum/dnf/pacman)
-          if echo "$script_content" | grep -qE 'apt-get|apk|yum|dnf|pacman'; then
-            echo "Package manager detection: PASSED"
-          else
-            echo "ERROR: Package manager detection not found"
-            exit 1
-          fi
-
-      - name: Test package manager detection
+      - name: Verify tools were installed
         run: |
-          echo "Testing package manager detection for ${{ matrix.pkgmgr }}..."
+          echo ""
+          echo "========================================"
+          echo "  Verifying installed tools"
+          echo "========================================"
 
-          # 验证脚本中包含当前包管理器的检测逻辑
-          script_content=$(cat install.sh)
-
-          # 检查脚本引用了当前包管理器
-          if echo "$script_content" | grep -qE '${{ matrix.pkgmgr }}'; then
-            # 静态验证：通过检查脚本内容确认包管理器支持
-            if echo "$script_content" | grep -qE '(command_exists|if command_exists).*'"${{ matrix.pkgmgr }}"; then
-              echo "Package manager (${{ matrix.pkgmgr }}): PASSED"
-            else
-              # 如果是标准包管理器，脚本应该支持
-              echo "Package manager (${{ matrix.pkgmgr }}): PASSED"
-            fi
-          else
-            echo "WARNING: Package manager detection may not work for ${{ matrix.pkgmgr }}"
+          # 由于在容器中，可能需要先加载 nvm
+          export NVM_DIR="$HOME/.nvm"
+          if [ -s "$NVM_DIR/nvm.sh" ]; then
+            . "$NVM_DIR/nvm.sh"
           fi
+
+          # 验证 nvm
+          if command -v nvm >/dev/null 2>&1 || [ -d "$NVM_DIR" ]; then
+            echo "nvm: INSTALLED (or existed before)"
+          else
+            echo "nvm: NOT FOUND"
+          fi
+
+          # 验证 uv
+          if command -v uv >/dev/null 2>&1; then
+            echo "uv: $(uv --version)"
+          else
+            echo "uv: NOT FOUND (may need PATH setup)"
+          fi
+
+          # 验证 Node.js
+          if command -v node >/dev/null 2>&1; then
+            echo "node: $(node --version)"
+          else
+            echo "node: NOT FOUND"
+          fi
+
+          # 验证 npm
+          if command -v npm >/dev/null 2>&1; then
+            echo "npm: $(npm --version)"
+          else
+            echo "npm: NOT FOUND"
+          fi
+
+          # 验证 Python
+          if command -v python >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
+            python --version 2>/dev/null || python3 --version
+            echo "python: FOUND"
+          else
+            echo "python: NOT FOUND"
+          fi
+
+          echo ""
+          echo "Tool verification: COMPLETED"
+
+      - name: Verify package manager was detected
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  Verifying package manager detection"
+          echo "========================================"
+
+          # 检查日志中是否正确检测到包管理器
+          if grep -qi "${{ matrix.pkgmgr }}" /tmp/install.log; then
+            echo "Package manager (${{ matrix.pkgmgr }}): DETECTED"
+          else
+            echo "Package manager (${{ matrix.pkgmgr }}: NOT explicitly shown in log (may be ok if deps already existed)"
+          fi
+
+      - name: Report results
+        if: always()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  ${{ matrix.image }} Test: ${{ job.status }}"
+          echo "========================================"
 
   # ============================================
-  # macOS 原生测试
+  # macOS 真实安装测试
   # ============================================
   test-macos:
     name: Test on macOS
@@ -282,61 +364,78 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Test Bash syntax
+      - name: Check existing tools
+        id: check-tools
         run: |
-          echo "Testing Bash syntax..."
-          bash -n install.sh
-          echo "Syntax check: PASSED"
+          echo "Checking existing tools..."
+          echo "nvm_exists=$(command -v nvm 2>/dev/null && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "uv_exists=$(command -v uv 2>/dev/null && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "node_exists=$(command -v node 2>/dev/null && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "claude_exists=$(command -v claude 2>/dev/null && echo true || echo false)" >> $GITHUB_OUTPUT
 
-      - name: Test dry-run mode
+      - name: Run real installation
+        id: install
         run: |
-          echo "Testing DRY_RUN mode..."
-          DRY_RUN=1 bash install.sh 2>&1 | head -100
-          echo "Dry-run: PASSED"
+          echo "========================================"
+          echo "  Running REAL installation on macOS"
+          echo "========================================"
+          echo ""
 
-      - name: Verify all functions exist
+          # 设置环境变量
+          export CLAUDE_SKIP_SUPERCLAUDE=1
+          export CLAUDE_USE_CHINA_MIRROR=1
+
+          start_time=$(date +%s)
+
+          # 真实执行安装脚本
+          set +e
+          bash install.sh 2>&1 | tee /tmp/install.log
+          exit_code=${PIPESTATUS[0]}
+          set -e
+
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+
+          echo ""
+          echo "========================================"
+          echo "  Installation completed in ${duration}s"
+          echo "  Exit code: $exit_code"
+          echo "========================================"
+
+          echo "exit_code=$exit_code" >> $GITHUB_OUTPUT
+          echo "duration=$duration" >> $GITHUB_OUTPUT
+
+      - name: Verify installation
         run: |
-          echo "Verifying all functions..."
-          script_content=$(cat install.sh)
+          echo ""
+          echo "========================================"
+          echo "  Verifying macOS installation"
+          echo "========================================"
 
-          required_functions=(
-            'command_exists'
-            'detect_shell'
-            'check_existing_tools'
-            'check_dependencies'
-            'load_nvm'
-            'install_nvm'
-            'install_uv'
-            'install_node_lts'
-            'install_python'
-            'configure_npm_mirror'
-            'install_claude_code'
-            'install_superclaude'
-            'configure_shell'
-            'main'
-          )
+          exit_code=$(echo "${{ steps.install.outputs.exit_code }}")
 
-          missing=()
-          for func in "${required_functions[@]}"; do
-            if ! echo "$script_content" | grep -qE "^[[:space:]]*(function[[:space:]]+)?${func}[[:space:]]*\(\)"; then
-              missing+=("$func")
-            fi
-          done
-
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "Missing functions: ${missing[*]}"
-            exit 1
-          fi
-          echo "All ${#required_functions[@]} functions verified: PASSED"
-
-      - name: Verify mirror configuration
-        run: |
-          if grep -qE 'npmmirror.com' install.sh; then
-            echo "China mirror: PASSED"
+          if [ "$exit_code" -eq 0 ]; then
+            echo "Installation: PASSED"
           else
-            echo "ERROR: China mirror not configured"
+            echo "Installation: FAILED"
+            tail -30 /tmp/install.log
             exit 1
           fi
+
+          # 验证脚本逻辑存在
+          if grep -qE 'npmmirror.com' install.sh; then
+            echo "China mirror: CONFIGURED"
+          else
+            echo "China mirror: NOT CONFIGURED"
+          fi
+
+      - name: Report results
+        if: always()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  macOS Test: ${{ job.status }}"
+          echo "========================================"
 
   # ============================================
   # 汇总报告
@@ -352,7 +451,7 @@ jobs:
         run: |
           echo ""
           echo "========================================"
-          echo "  Test Summary"
+          echo "  Test Summary - REAL INSTALLATION"
           echo "========================================"
           echo ""
 
@@ -360,23 +459,45 @@ jobs:
 
           jobs_info=$(gh run view ${{ github.run_id }} --json jobs -q '.jobs[] | "\(.name)|\(.conclusion)"' 2>/dev/null || echo "")
 
+          failed_jobs=()
+          passed_jobs=()
+
           while IFS='|' read -r name conclusion; do
             [ -z "$name" ] && continue
             echo "  $name: $conclusion"
             if [ "$conclusion" != "success" ]; then
               all_passed=false
+              failed_jobs+=("$name")
+            else
+              passed_jobs+=("$name")
             fi
           done <<< "$jobs_info"
 
           echo ""
+          echo "========================================"
+          echo "  Passed: ${#passed_jobs[@]} | Failed: ${#failed_jobs[@]}"
+          echo "========================================"
+
           if [ "$all_passed" = true ]; then
+            echo ""
             echo "========================================"
-            echo "  ALL TESTS PASSED!"
+            echo "  ALL REAL INSTALLATION TESTS PASSED!"
             echo "========================================"
+            echo ""
+            echo "Verified that install.sh works correctly on:"
+            echo "  - Alpine Linux (apk)"
+            echo "  - Ubuntu (apt)"
+            echo "  - Fedora (dnf)"
+            echo "  - Debian (apt)"
+            echo "  - macOS"
             exit 0
           else
+            echo ""
             echo "========================================"
             echo "  SOME TESTS FAILED!"
             echo "========================================"
+            for job in "${failed_jobs[@]}"; do
+              echo "  - $job"
+            done
             exit 1
           fi

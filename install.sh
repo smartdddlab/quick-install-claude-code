@@ -417,7 +417,8 @@ install_superclaude() {
         return 0
     fi
 
-    npm install -g @bifrost_inc/superclaude
+    # npm 安装时传递 PATH 环境变量，确保 postinstall 脚本能检测到 Python
+    env "PATH=$PATH" npm install -g @bifrost_inc/superclaude
 
     # 初始化 SuperClaude
     if command_exists superclaude; then

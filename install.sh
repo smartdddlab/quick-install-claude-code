@@ -234,11 +234,16 @@ install_uv() {
 
     curl -LsSf https://astral.sh/uv/install.sh | sh
 
-    # uv 安装脚本会自动添加到 ~/.cargo/bin
-    # 确保 PATH 包含 cargo/bin
-    export PATH="$HOME/.cargo/bin:$PATH"
+    # uv 安装脚本可能安装到 ~/.cargo/bin 或 ~/.local/bin
+    # 确保 PATH 包含两者
+    export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
 
-    log_info "uv 安装完成: $(uv --version)"
+    # 验证安装
+    if command_exists uv; then
+        log_info "uv 安装完成: $(uv --version)"
+    else
+        log_warn "uv 安装后验证失败，请手动确认 PATH 设置"
+    fi
 }
 
 # 安装 Node.js LTS

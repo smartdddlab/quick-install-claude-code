@@ -423,16 +423,22 @@ install_superclaude() {
         return 1
     fi
 
-    # 创建虚拟环境并激活（确保 Python 可用）
+    # 创建虚拟环境并激活（确保 Python 和 pip 可用）
     local venv_dir="$HOME/.cache/superclaude-venv"
     if [ ! -d "$venv_dir" ]; then
-        uv venv "$venv_dir"
+        uv venv "$venv_dir" --python python3.12
     fi
 
     # 激活虚拟环境
     # shellcheck source=/dev/null
     . "$venv_dir/bin/activate"
     log_info "已激活虚拟环境: $venv_dir"
+
+    # 确保 pip 可用（uv venv 默认包含 pip）
+    if ! command -v pip3 >/dev/null 2>&1; then
+        log_warn "pip 未找到，尝试安装..."
+        uv pip install pip
+    fi
 
     # 现在 python3 和 pip 应该可用了
     npm install -g @bifrost_inc/superclaude

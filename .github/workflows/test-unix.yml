@@ -690,11 +690,13 @@ jobs:
           echo "========================================"
           echo ""
 
-          jobs=("static-analysis" "docker-integration-alpine" "docker-integration-ubuntu" "logic-validation" "test-linux" "test-macos")
+          # 使用实际 job 名称（包含空格和大小写）
+          jobs=("Static Analysis" "Docker Integration (Alpine)" "Docker Integration (Ubuntu)" "Logic Validation" "Test on Linux" "Test on macOS")
           all_passed=true
 
           for job in "${jobs[@]}"; do
-            status=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --paginate -q ".jobs[] | select(.name == \"$job\") | .conclusion" 2>/dev/null || echo "skipped")
+            # 使用 jq 进行不区分大小写的匹配
+            status=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --paginate -q ".jobs[] | select(.name | test(\"$job\"; \"i\")) | .conclusion" 2>/dev/null || echo "skipped")
             echo "  $job: $status"
             if [ "$status" != "success" ]; then
               all_passed=false

@@ -423,10 +423,12 @@ install_superclaude() {
         return 1
     fi
 
-    # 创建虚拟环境（使用 --with-pip 确保 pip 可用）
+    # 创建虚拟环境并安装 pip
     local venv_dir="$HOME/.cache/superclaude-venv"
     if [ ! -d "$venv_dir" ]; then
-        uv venv "$venv_dir" --python python3.12 --with-pip
+        uv venv "$venv_dir" --python python3.12
+        # 使用 uv pip 安装 pip
+        uv pip install pip 2>/dev/null || true
     fi
 
     # 在虚拟环境 bin 目录中创建 symlink 到系统 PATH 目录

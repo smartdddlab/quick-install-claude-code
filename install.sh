@@ -336,6 +336,9 @@ install_python() {
         return 0
     fi
 
+    # 确保 PATH 包含 uv 安装的 Python
+    export PATH="$HOME/.local/bin:$PATH"
+
     # 检查是否已安装 Python 3.12
     if uv python list | grep -q "3.12"; then
         log_info "Python 3.12 已安装"
@@ -343,7 +346,10 @@ install_python() {
         uv python install 3.12
     fi
 
-    log_info "Python 安装完成: $(python --version)"
+    # 验证 Python 安装（python3 或 python）
+    local python_version
+    python_version=$(python3 --version 2>/dev/null || python --version 2>/dev/null || echo "unknown")
+    log_info "Python 安装完成: $python_version"
 }
 
 # 配置 npm 镜像
@@ -410,6 +416,9 @@ install_superclaude() {
         log_debug "npm install -g @bifrost_inc/superclaude && superclaude install"
         return 0
     fi
+
+    # 确保 PATH 包含 uv 安装的 Python（SuperClaude 需要）
+    export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
 
     npm install -g @bifrost_inc/superclaude
 

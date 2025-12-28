@@ -186,37 +186,45 @@ load_nvm() {
     if [ -s "$NVM_DIR/nvm.sh" ]; then
         export NVM_DIR
         # shellcheck source=/dev/null
-        . "$NVM_DIR/nvm.sh"
-        return 0
+        . "$NVM_DIR/nvm.sh" nvm
+        # 验证 nvm 命令是否可用
+        if command -v nvm >/dev/null 2>&1; then
+            return 0
+        fi
     fi
     return 1
 }
 
 # 安装 nvm
 install_nvm() {
-    if [ -d "$NVM_DIR" ]; then
-        log_info "nvm 已安装于 $NVM_DIR"
-        load_nvm
-        return 0
-    fi
-
     log_step "安装 nvm $NVM_VERSION..."
     if [ "$DRY_RUN" == "1" ]; then
         log_debug "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash"
         return 0
     fi
 
-    # 下载并执行 nvm 安装脚本
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash
+    # 检查 nvm 是否已安装
+    if [ -d "$NVM_DIR" ]; then
+        log_info "nvm 已安装于 $NVM_DIR"
+    else
+        # 下载并执行 nvm 安装脚本
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash
+        log_info "nvm 安装完成"
+    fi
 
-    # 加载 nvm
+    # 加载 nvm (必须在全局 scope 加载，因为 nvm 是通过函数定义的)
     export NVM_DIR="$HOME/.nvm"
     if [ -s "$NVM_DIR/nvm.sh" ]; then
         # shellcheck source=/dev/null
-        . "$NVM_DIR/nvm.sh"
+        . "$NVM_DIR/nvm.sh" nvm
     fi
 
-    log_info "nvm 安装完成"
+    # 验证 nvm 可用
+    if command_exists nvm; then
+        log_info "nvm 加载成功: $(nvm --version)"
+    else
+        log_warn "nvm 加载验证失败，Node.js 安装可能受影响"
+    fi
 }
 
 # 安装 uv
@@ -252,7 +260,7 @@ install_node_lts() {
 
     # 加载 nvm
     if ! load_nvm; then
-        log_error "nvm 未安装，无法安装 Node.js"
+        log_error "nvm 未安装或加载失败，无法安装 Node.js"
         return 1
     fi
 
@@ -261,19 +269,27 @@ install_node_lts() {
         return 0
     fi
 
-    # nvm 在某些情况下会因严格模式（set -u）而失败
-    # 使用子 shell 或临时禁用严格模式
+    # 检查 Node.js 是否已安装
+    if command_exists node; then
+        log_info "Node.js 已安装: $(node --version)"
+        return 0
+    fi
+
+    # nvm install --lts 可能在严格模式下失败 (PROVIDED_VERSION unbound)
+    # 临时禁用严格模式执行 nvm
+    log_info "安装 Node.js LTS..."
     (
-        # 临时禁用严格模式以避免 nvm 内部错误
-        set +eu
+        set +e
         nvm install --lts
         nvm use --lts
-    ) || {
-        # 如果仍然失败，尝试直接安装指定版本
-        log_warn "nvm --lts 安装失败，尝试安装指定版本..."
-        nvm install v20.18.1
-        nvm use v20.18.1
-    }
+    )
+    install_status=$?
+
+    if [ $install_status -ne 0 ]; then
+        log_warn "nvm 安装 Node.js 失败，尝试直接下载..."
+        # 备用方案：直接下载 Node.js
+        return 1
+    fi
 
     log_info "Node.js 安装完成: $(node --version)"
 }

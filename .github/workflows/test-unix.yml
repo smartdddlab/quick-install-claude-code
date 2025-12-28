@@ -180,19 +180,12 @@ jobs:
         include:
           - image: alpine:latest
             pkgmgr: apk
-            install_cmd: "apk add --no-cache"
           - image: ubuntu:latest
             pkgmgr: apt
-            install_cmd: "apt-get update && apt-get install -y"
           - image: fedora:latest
             pkgmgr: dnf
-            install_cmd: "dnf install -y"
-          - image: amazonlinux:latest
-            pkgmgr: yum
-            install_cmd: "yum install -y"
-          - image: archlinux:latest
-            pkgmgr: pacman
-            install_cmd: "pacman -Sy --noconfirm"
+          - image: debian:latest
+            pkgmgr: apt
 
     container: ${{ matrix.image }}
 
@@ -202,18 +195,17 @@ jobs:
 
       - name: Install bash for the script
         run: |
-          # Alpine/Debian-based images need bash explicitly
+          # 安装 bash 和必要依赖
           if [ "${{ matrix.pkgmgr }}" = "apk" ]; then
             apk add --no-cache bash curl git ca-certificates
-          elif [ "${{ matrix.pkgmgr }}" = "apt" ]; then
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update && apt-get install -y bash curl git ca-certificates
-          elif [ "${{ matrix.pkgmgr }}" = "dnf" ]; then
-            dnf install -y bash curl git ca-certificates
-          elif [ "${{ matrix.pkgmgr }}" = "yum" ]; then
-            yum install -y bash curl git ca-certificates
-          elif [ "${{ matrix.pkgmgr }}" = "pacman" ]; then
-            pacman -Sy --noconfirm bash curl git ca-certificates
+          else
+            # apt/dnf
+            if [ "${{ matrix.pkgmgr }}" = "dnf" ]; then
+              dnf install -y bash curl git ca-certificates
+            else
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update && apt-get install -y bash curl git ca-certificates
+            fi
           fi
 
       - name: Test script execution

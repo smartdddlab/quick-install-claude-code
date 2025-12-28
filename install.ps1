@@ -368,6 +368,11 @@ function Test-ScoopAvailable {
 function Test-ToolWithScoopWhich {
     param([string]$ToolName)
 
+    # 检查 scoop 是否可用
+    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+        return @{ Exists = $false }
+    }
+
     try {
         $result = scoop which $ToolName 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0 -and $result -match $ToolName) {
@@ -388,6 +393,11 @@ function Test-ToolWithScoopWhich {
 # 使用 scoop list 检测工具是否安装（scoop which 失败的备选方案）
 function Test-ToolWithScoopList {
     param([string]$ToolName)
+
+    # 检查 scoop 是否可用
+    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+        return @{ Exists = $false }
+    }
 
     try {
         $listResult = scoop list 2>&1 | Out-String
@@ -1170,6 +1180,12 @@ function Install-Tools {
             continue
         }
 
+        # 检查 scoop 是否可用
+        if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+            Write-Warning "Scoop 不可用，无法安装 $tool"
+            continue
+        }
+
         # 先检查是否已在 Scoop 中
         $scoopListOutput = scoop list 2>&1 | Out-String
         if ($scoopListOutput -match "$tool\s") {
@@ -1215,6 +1231,12 @@ function Install-Tools {
         if (Get-Command $tool -ErrorAction SilentlyContinue) {
             $version = & $tool --version 2>&1 | Select-Object -First 1
             Write-Success "$tool 已安装 - $version"
+            continue
+        }
+
+        # 检查 scoop 是否可用
+        if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+            Write-Warning "Scoop 不可用，无法安装 $tool"
             continue
         }
 

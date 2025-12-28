@@ -1765,7 +1765,7 @@ function Complete-Installation {
         }
     } else {
         Write-Warning "Claude Code 未安装或不可用"
-        Write-Host "  可运行: npm install -g @anthropic-ai/claude" -ForegroundColor Cyan
+        Write-Host "  可运行: npm install -g @anthropic-ai/claude-code" -ForegroundColor Cyan
     }
 
     # 检查核心工具是否至少有一个可用

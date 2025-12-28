@@ -376,11 +376,11 @@ install_claude_code() {
 
     log_step "安装 Claude Code..."
     if [ "$DRY_RUN" == "1" ]; then
-        log_debug "npm install -g @anthropic-ai/claude"
+        log_debug "npm install -g @anthropic-ai/claude-code"
         return 0
     fi
 
-    npm install -g @anthropic-ai/claude
+    npm install -g @anthropic-ai/claude-code
 
     # 验证安装
     if command_exists claude; then

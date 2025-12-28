@@ -50,7 +50,7 @@ DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install
 1. nvm → Node.js LTS
 2. uv → Python 3.12
 3. **Claude Code (npm)** ⭐
-4. SuperClaude (可选)
+4. SuperClaude
 
 ## 安装后
 

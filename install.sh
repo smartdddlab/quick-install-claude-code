@@ -265,7 +265,7 @@ install_node_lts() {
     fi
 
     if [ "$DRY_RUN" == "1" ]; then
-        log_debug "nvm install --lts && nvm use --lts"
+        log_debug "nvm install --lts"
         return 0
     fi
 
@@ -275,26 +275,51 @@ install_node_lts() {
         return 0
     fi
 
+    # 记录已存在的版本
+    local existing_versions=""
+    if [ -d "$NVM_DIR/versions/node" ]; then
+        existing_versions=$(ls -1 "$NVM_DIR/versions/node" 2>/dev/null || echo "")
+    fi
+
     # nvm install --lts 可能在严格模式下失败 (PROVIDED_VERSION unbound)
-    # 使用子 shell 执行 nvm 命令，避免影响主脚本的严格模式
+    # 使用子 shell 执行，避免影响主脚本
     log_info "安装 Node.js LTS..."
     (
         set +euo pipefail
         export NVM_DIR="$HOME/.nvm"
         # shellcheck source=/dev/null
         . "$NVM_DIR/nvm.sh" nvm
-        nvm install --lts
-        nvm use --lts
-    ) 2>/dev/null || true
+        nvm install --lts 2>&1 | grep -v "unbound variable" || true
+    )
 
-    # 验证 Node.js 是否可用（这是最重要的检查）
-    if command_exists node; then
+    # 查找新安装的版本
+    local new_version=""
+    if [ -d "$NVM_DIR/versions/node" ]; then
+        for v in $(ls -1 "$NVM_DIR/versions/node" 2>/dev/null); do
+            if ! echo "$existing_versions" | grep -q "$v"; then
+                new_version="$v"
+                break
+            fi
+        done
+    fi
+
+    # 如果没找到新版本，尝试查找任何已安装的版本
+    if [ -z "$new_version" ] && [ -d "$NVM_DIR/versions/node" ]; then
+        new_version=$(ls -1 "$NVM_DIR/versions/node" | tail -1)
+    fi
+
+    # 手动设置 PATH
+    if [ -n "$new_version" ] && [ -d "$NVM_DIR/versions/node/$new_version/bin" ]; then
+        export PATH="$NVM_DIR/versions/node/$new_version/bin:$PATH"
+        log_info "Node.js 安装完成: v$new_version (npm 已包含)"
+    elif command_exists node; then
         log_info "Node.js 安装完成: $(node --version)"
-        return 0
     else
         log_warn "Node.js 安装验证失败"
         return 1
     fi
+
+    return 0
 }
 
 # 安装 Python

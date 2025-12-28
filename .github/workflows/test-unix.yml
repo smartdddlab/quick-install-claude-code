@@ -482,47 +482,67 @@ jobs:
 
           all_passed=true
 
-          jobs_info=$(gh run view ${{ github.run_id }} --json jobs -q '.jobs[] | "\(.name)|\(.conclusion)"' 2>/dev/null || echo "")
+          # 获取当前 workflow run 的所有 jobs
+          jobs_json=$(gh run view ${{ github.run_id }} --json jobs 2>/dev/null)
 
-          failed_jobs=()
-          passed_jobs=()
+          if [ -z "$jobs_json" ] || echo "$jobs_json" | grep -q '"jobs": \[\]'; then
+            echo "  Warning: Could not fetch job status"
+            echo "  Using step status from workflow context..."
 
-          while IFS='|' read -r name conclusion; do
-            [ -z "$name" ] && continue
-            echo "  $name: $conclusion"
-            if [ "$conclusion" != "success" ]; then
-              all_passed=false
-              failed_jobs+=("$name")
+            # 备用方案：检查每个需要的 job 是否成功
+            # 通过检查 job 名称来验证
+            core_status="${{ needs.core-validation.result }}"
+            docker_status="${{ needs.docker-integration.result }}"
+            macos_status="${{ needs.test-macos.result }}"
+
+            echo "  Core Validation: $core_status"
+            echo "  Docker Integration: $docker_status"
+            echo "  Test on macOS: $macos_status"
+
+            if [ "$core_status" = "success" ] && [ "$docker_status" = "success" ] && [ "$macos_status" = "success" ]; then
+              echo ""
+              echo "========================================"
+              echo "  ALL TESTS PASSED!"
+              echo "========================================"
+              exit 0
             else
-              passed_jobs+=("$name")
+              echo ""
+              echo "========================================"
+              echo "  SOME TESTS FAILED!"
+              echo "========================================"
+              exit 1
             fi
-          done <<< "$jobs_info"
-
-          echo ""
-          echo "========================================"
-          echo "  Passed: ${#passed_jobs[@]} | Failed: ${#failed_jobs[@]}"
-          echo "========================================"
-
-          if [ "$all_passed" = true ]; then
-            echo ""
-            echo "========================================"
-            echo "  ALL REAL INSTALLATION TESTS PASSED!"
-            echo "========================================"
-            echo ""
-            echo "Verified that install.sh works correctly on:"
-            echo "  - Alpine Linux (apk)"
-            echo "  - Ubuntu (apt)"
-            echo "  - Fedora (dnf)"
-            echo "  - Debian (apt)"
-            echo "  - macOS"
-            exit 0
           else
+            failed_jobs=()
+            passed_jobs=()
+
+            echo "$jobs_json" | jq -r '.jobs[] | "\(.name)|\(.conclusion)"' 2>/dev/null | while IFS='|' read -r name conclusion; do
+              [ -z "$name" ] && continue
+              echo "  $name: $conclusion"
+              if [ "$conclusion" != "success" ]; then
+                all_passed=false
+                failed_jobs+=("$name")
+              else
+                passed_jobs+=("$name")
+              fi
+            done
+
             echo ""
             echo "========================================"
-            echo "  SOME TESTS FAILED!"
+            echo "  Passed: ${#passed_jobs[@]} | Failed: ${#failed_jobs[@]}"
             echo "========================================"
-            for job in "${failed_jobs[@]}"; do
-              echo "  - $job"
-            done
-            exit 1
+
+            if [ "$all_passed" = true ]; then
+              echo ""
+              echo "========================================"
+              echo "  ALL REAL INSTALLATION TESTS PASSED!"
+              echo "========================================"
+              exit 0
+            else
+              echo ""
+              echo "========================================"
+              echo "  SOME TESTS FAILED!"
+              echo "========================================"
+              exit 1
+            fi
           fi

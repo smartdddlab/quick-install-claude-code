@@ -116,7 +116,10 @@ jobs:
 
           $missingParams = @()
           foreach ($param in $requiredParams) {
-            if ($scriptContent -notmatch "\[switch\]\$$param|\[string\]\$$param") {
+            # Use simple string matching instead of complex regex to avoid YAML escaping issues
+            $switchPattern = "[switch]`$$param"
+            $stringPattern = "[string]`$$param"
+            if ($scriptContent -notmatch [regex]::Escape($switchPattern) -and $scriptContent -notmatch [regex]::Escape($stringPattern)) {
               $missingParams += $param
             }
           }

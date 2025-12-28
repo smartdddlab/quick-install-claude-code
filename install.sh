@@ -427,9 +427,9 @@ install_superclaude() {
     local venv_dir="$HOME/.cache/superclaude-venv"
     if [ ! -d "$venv_dir" ]; then
         uv venv "$venv_dir" --python python3.12
-        # 使用 uv pip 安装 pip
-        uv pip install pip 2>/dev/null || true
     fi
+    # 确保 pip 可用（使用 uv pip 安装到虚拟环境）
+    uv pip install pip --python "$venv_dir/bin/python" 2>/dev/null || true
 
     # 在虚拟环境 bin 目录中创建 symlink 到系统 PATH 目录
     # 这样 command -v python3 就能找到虚拟环境中的 Python

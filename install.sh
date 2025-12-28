@@ -261,8 +261,19 @@ install_node_lts() {
         return 0
     fi
 
-    nvm install --lts
-    nvm use --lts
+    # nvm 在某些情况下会因严格模式（set -u）而失败
+    # 使用子 shell 或临时禁用严格模式
+    (
+        # 临时禁用严格模式以避免 nvm 内部错误
+        set +eu
+        nvm install --lts
+        nvm use --lts
+    ) || {
+        # 如果仍然失败，尝试直接安装指定版本
+        log_warn "nvm --lts 安装失败，尝试安装指定版本..."
+        nvm install v20.18.1
+        nvm use v20.18.1
+    }
 
     log_info "Node.js 安装完成: $(node --version)"
 }

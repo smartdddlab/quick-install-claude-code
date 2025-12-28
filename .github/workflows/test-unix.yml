@@ -276,10 +276,12 @@ jobs:
       - name: Test package manager detection (apt)
         run: |
           echo "Testing apt package manager detection..."
-          # 先移除 curl 来触发依赖检测
-          rm -f /usr/bin/curl 2>/dev/null || true
-          DRY_RUN=1 bash install.sh 2>&1 | grep -q "apt-get"
-          echo "Package manager detection verified (apt-get)"
+          # 移除所有必要的依赖来触发依赖检测
+          rm -f /usr/bin/curl /usr/bin/git 2>/dev/null || true
+          # 还需要移除 ca-certificates 才能触发安装
+          export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+          DRY_RUN=1 bash install.sh 2>&1 | grep -qi "apt"
+          echo "Package manager detection verified (apt)"
 
       - name: Test nvm download URL
         run: |
@@ -337,7 +339,8 @@ jobs:
 
           # 提取 main 函数中的函数调用（支持多种调用方式）
           # 包括：直接调用 `install_nvm`、条件调用 `if ! check_dependencies`、带echo的调用 `echo "xxx" && install_uv`
-          actual_order=$(echo "$main_section" | grep -oE '(if ! |echo.*&&[[:space:]]+|)[[:space:]]*(check_dependencies|check_existing_tools|install_nvm|install_uv|install_node_lts|install_python|configure_npm_mirror|install_claude_code|install_superclaude|configure_shell)' | sed 's/[[:space:]]*//g' | grep -E '(check_dependencies|check_existing_tools|install_nvm|install_uv|install_node_lts|install_python|configure_npm_mirror|install_claude_code|install_superclaude|configure_shell)' | sort -u)
+          # 使用 lookahead 只提取函数名，不包含前缀
+          actual_order=$(echo "$main_section" | grep -oE '(if ![[:space:]]|echo.*&&[[:space:]]+|^[[:space:]]*)(check_dependencies|check_existing_tools|install_nvm|install_uv|install_node_lts|install_python|configure_npm_mirror|install_claude_code|install_superclaude|configure_shell)' | grep -oE '(check_dependencies|check_existing_tools|install_nvm|install_uv|install_node_lts|install_python|configure_npm_mirror|install_claude_code|install_superclaude|configure_shell)' | sort -u)
 
           echo "Expected order: ${expected_order[*]}"
           echo "Actual order:"

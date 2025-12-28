@@ -417,29 +417,25 @@ install_superclaude() {
         return 0
     fi
 
-    # 确保 uv 可用且 Python 3.12 已安装
+    # 确保 uv 可用
     if ! command_exists uv; then
         log_error "uv 未安装，无法安装 SuperClaude"
         return 1
     fi
 
-    # 获取 uv Python 路径并创建 symlink 到 PATH（SuperClaude 使用 command -v python3 检测）
-    local uv_python_dir
-    uv_python_path=$(uv python list | grep "3.12" | head -1 | awk '{print $4}')
-    if [ -z "$uv_python_path" ]; then
-        uv python install 3.12
-        uv_python_path=$(uv python list | grep "3.12" | head -1 | awk '{print $4}')
+    # 创建虚拟环境并激活（确保 Python 可用）
+    local venv_dir="$HOME/.cache/superclaude-venv"
+    if [ ! -d "$venv_dir" ]; then
+        uv venv "$venv_dir"
     fi
 
-    if [ -n "$uv_python_path" ]; then
-        uv_python_dir=$(dirname "$uv_python_path")
-        # 将 uv python 目录添加到 PATH 前置
-        export PATH="$uv_python_dir:$PATH"
-        log_info "PATH 已包含: $uv_python_dir"
-    fi
+    # 激活虚拟环境
+    # shellcheck source=/dev/null
+    . "$venv_dir/bin/activate"
+    log_info "已激活虚拟环境: $venv_dir"
 
-    # 使用 env 确保 PATH 传递给 npm 子进程
-    env "PATH=$PATH" npm install -g @bifrost_inc/superclaude
+    # 现在 python3 和 pip 应该可用了
+    npm install -g @bifrost_inc/superclaude
 
     # 初始化 SuperClaude
     if command_exists superclaude; then

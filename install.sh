@@ -438,7 +438,8 @@ install_superclaude() {
         log_info "PATH 已包含: $uv_python_dir"
     fi
 
-    npm install -g @bifrost_inc/superclaude
+    # 使用 env 确保 PATH 传递给 npm 子进程
+    env "PATH=$PATH" npm install -g @bifrost_inc/superclaude
 
     # 初始化 SuperClaude
     if command_exists superclaude; then

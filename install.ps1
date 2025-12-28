@@ -1107,6 +1107,12 @@ function Configure-ScoopChinaMirror {
 
     Write-Step "配置国内镜像..."
 
+    # 检查 scoop 命令是否可用
+    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
+        Write-VerboseLog "Scoop 不可用，跳过国内镜像配置"
+        return
+    }
+
     if (Test-WhatIfMode) {
         Write-Host "    [WHATIF] scoop config scoop_repo https://gitee.com/scoop-installer-mirrors/Scoop" -ForegroundColor DarkGray
         Write-Host "    [WHATIF] scoop bucket add main https://gitee.com/scoop-installer-mirrors/Main" -ForegroundColor DarkGray

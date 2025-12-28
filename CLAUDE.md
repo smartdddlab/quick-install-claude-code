@@ -92,8 +92,10 @@ The Bash script is organized into functional steps:
 7. **Python Installation** - Installs Python 3.12 via uv
 8. **npm Mirror Configuration** - Sets registry to npmmirror.com (China mode)
 9. **Claude Code Installation** - Installs via npm global
-10. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`)
-11. **Shell Configuration** - Writes nvm/uv settings to ~/.bashrc or ~/.zshrc
+10. **Configure Onboarding** - Sets `hasCompletedOnboarding: true` in `.claude.json`
+11. **SuperClaude Installation** - Installs via npm (`@bifrost_inc/superclaude`)
+12. **cc-switch Installation** - Installs via Homebrew on macOS only
+13. **Shell Configuration** - Writes nvm/uv settings to ~/.bashrc or ~/.zshrc
 
 ### Log File Location
 - **Windows**: `<InstallDrive>:\smartddd-claude-tools\install-<timestamp>.log`
@@ -121,8 +123,8 @@ The `install.sh` script supports `DRY_RUN=1` mode that shows all commands withou
 | Claude Code | npm (Taobao mirror) | npm (npmmirror.com) |
 | SuperClaude | npm | npm |
 | nvm | - | v0.40.3 |
-| cc-switch | Scoop (optional) | - |
+| cc-switch | Scoop (optional) | Homebrew (macOS only) |
 
 ## Version
 
-Uses Semantic Versioning (SemVer) - current version: **v1.0.0**
+Uses Semantic Versioning (SemVer) - current version: **v1.1.0**

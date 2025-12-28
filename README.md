@@ -104,7 +104,7 @@ claude --version
 
 如果未安装，手动安装：
 ```powershell
-npm install -g @anthropic-ai/claude
+npm install -g @anthropic-ai/claude-code
 ```
 
 ## 参考

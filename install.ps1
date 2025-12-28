@@ -117,7 +117,7 @@ $Script:LockFilePath = "$env:TEMP\claude-install-${lockId}.lock"
 # 使用 uv 替代 python312，添加 Claude Code npm 安装
 $Script:ToolsToInstall = @('git', 'uv', 'nodejs-lts')
 # Claude Code 通过 npm 全局安装，不在 scoop 工具列表中
-$Script:NpmGlobalTools = @('@anthropic-ai/claude')
+$Script:NpmGlobalTools = @('@anthropic-ai/claude-code')
 $Script:OptionalTools = @('cc-switch')
 
 # 如果指定了 IncludeCcSwitch，将 cc-switch 移入必需工具列表

@@ -276,22 +276,25 @@ install_node_lts() {
     fi
 
     # nvm install --lts 可能在严格模式下失败 (PROVIDED_VERSION unbound)
-    # 临时禁用严格模式执行 nvm
+    # 使用子 shell 执行 nvm 命令，避免影响主脚本的严格模式
     log_info "安装 Node.js LTS..."
     (
-        set +e
+        set +euo pipefail
+        export NVM_DIR="$HOME/.nvm"
+        # shellcheck source=/dev/null
+        . "$NVM_DIR/nvm.sh" nvm
         nvm install --lts
         nvm use --lts
-    )
-    install_status=$?
+    ) 2>/dev/null || true
 
-    if [ $install_status -ne 0 ]; then
-        log_warn "nvm 安装 Node.js 失败，尝试直接下载..."
-        # 备用方案：直接下载 Node.js
+    # 验证 Node.js 是否可用（这是最重要的检查）
+    if command_exists node; then
+        log_info "Node.js 安装完成: $(node --version)"
+        return 0
+    else
+        log_warn "Node.js 安装验证失败"
         return 1
     fi
-
-    log_info "Node.js 安装完成: $(node --version)"
 }
 
 # 安装 Python

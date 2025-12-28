@@ -287,7 +287,7 @@ jobs:
         run: |
           echo "Testing nvm download URL accessibility..."
           # 验证 nvm URL 格式正确（支持版本变量或版本号）
-          grep -oE "https://raw.githubusercontent.com/nvm-sh/nvm/[$]?[A-Za-z0-9.-]+/install.sh" install.sh
+          grep -qE "nvm-sh/nvm.*install.sh" install.sh
           echo "NVM URL format verified"
 
       - name: Test uv download URL

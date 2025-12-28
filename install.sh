@@ -423,19 +423,19 @@ install_superclaude() {
         return 1
     fi
 
-    # 获取 uv Python 3.12 的可执行文件路径
-    local uv_python_path
+    # 获取 uv Python 路径并创建 symlink 到 PATH（SuperClaude 使用 command -v python3 检测）
+    local uv_python_dir
     uv_python_path=$(uv python list | grep "3.12" | head -1 | awk '{print $4}')
     if [ -z "$uv_python_path" ]; then
-        # 如果找不到，尝试安装
         uv python install 3.12
         uv_python_path=$(uv python list | grep "3.12" | head -1 | awk '{print $4}')
     fi
 
-    # 设置 npm 使用 uv 的 Python
     if [ -n "$uv_python_path" ]; then
-        export npm_config_python="$uv_python_path"
-        log_info "使用 uv Python: $uv_python_path"
+        uv_python_dir=$(dirname "$uv_python_path")
+        # 将 uv python 目录添加到 PATH 前置
+        export PATH="$uv_python_dir:$PATH"
+        log_info "PATH 已包含: $uv_python_dir"
     fi
 
     npm install -g @bifrost_inc/superclaude

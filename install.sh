@@ -4,11 +4,11 @@ set -euo pipefail  # 错误即停、变量未定义警告、管道错误捕获
 # ================================================
 # Claude Code Linux/macOS 一键安装器
 # ================================================
-# Version: v1.0.0
+# Version: v1.1.0
 # Based on: implementation-plan.md
 
 # 脚本元信息
-SCRIPT_VERSION="v1.0.0"
+SCRIPT_VERSION="v1.1.0"
 NVM_VERSION="v0.40.3"
 
 # 颜色输出

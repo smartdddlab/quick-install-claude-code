@@ -417,6 +417,54 @@ install_claude_code() {
     fi
 }
 
+# 配置 Claude Code 跳过 onboarding
+configure_claude_onboarding() {
+    log_step "配置 Claude Code 跳过 onboarding..."
+
+    # 检查 Node.js 是否可用
+    if ! command_exists node; then
+        log_warn "Node.js 不可用，跳过 onboarding 配置"
+        return 0
+    fi
+
+    local claude_json_path="$HOME/.claude.json"
+
+    if [ "$DRY_RUN" == "1" ]; then
+        log_debug "配置 $claude_json_path 设置 hasCompletedOnboarding: true"
+        return 0
+    fi
+
+    # 使用 Node.js 脚本创建/修改 .claude.json
+    local node_script='
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+
+const filePath = path.join(os.homedir(), ".claude.json");
+let content = {};
+
+if (fs.existsSync(filePath)) {
+    try {
+        const existing = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+        content = existing;
+    } catch (e) {
+        // 解析失败则使用空对象
+    }
+}
+
+content.hasCompletedOnboarding = true;
+fs.writeFileSync(filePath, JSON.stringify(content, null, 2), "utf-8");
+console.log("Configuration saved to: " + filePath);
+'
+
+    # 执行配置脚本
+    if node --eval "$node_script" 2>/dev/null; then
+        log_info "Claude Code onboarding 配置完成"
+    else
+        log_warn "onboarding 配置失败，但 Claude Code 已安装"
+    fi
+}
+
 # 安装 SuperClaude
 install_superclaude() {
     if [ "$SKIP_SUPERCLAUDE" == "1" ]; then
@@ -580,6 +628,9 @@ main() {
 
     # 8. 安装 Claude Code
     install_claude_code
+
+    # 8.5 配置 Claude Code 跳过 onboarding
+    configure_claude_onboarding
 
     # 9. 安装 SuperClaude (可选)
     install_superclaude

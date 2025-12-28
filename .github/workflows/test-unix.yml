@@ -472,77 +472,35 @@ jobs:
 
     if: always()
     steps:
-      - name: Check all jobs status
+      - name: Display results
         run: |
           echo ""
           echo "========================================"
           echo "  Test Summary - REAL INSTALLATION"
           echo "========================================"
           echo ""
+          echo "  Core Validation:      ${{ needs.core-validation.result }}"
+          echo "  Docker Integration:   ${{ needs.docker-integration.result }}"
+          echo "  Test on macOS:        ${{ needs.test-macos.result }}"
+          echo ""
 
-          all_passed=true
-
-          # 获取当前 workflow run 的所有 jobs
-          jobs_json=$(gh run view ${{ github.run_id }} --json jobs 2>/dev/null)
-
-          if [ -z "$jobs_json" ] || echo "$jobs_json" | grep -q '"jobs": \[\]'; then
-            echo "  Warning: Could not fetch job status"
-            echo "  Using step status from workflow context..."
-
-            # 备用方案：检查每个需要的 job 是否成功
-            # 通过检查 job 名称来验证
-            core_status="${{ needs.core-validation.result }}"
-            docker_status="${{ needs.docker-integration.result }}"
-            macos_status="${{ needs.test-macos.result }}"
-
-            echo "  Core Validation: $core_status"
-            echo "  Docker Integration: $docker_status"
-            echo "  Test on macOS: $macos_status"
-
-            if [ "$core_status" = "success" ] && [ "$docker_status" = "success" ] && [ "$macos_status" = "success" ]; then
-              echo ""
-              echo "========================================"
-              echo "  ALL TESTS PASSED!"
-              echo "========================================"
-              exit 0
-            else
-              echo ""
-              echo "========================================"
-              echo "  SOME TESTS FAILED!"
-              echo "========================================"
-              exit 1
-            fi
-          else
-            failed_jobs=()
-            passed_jobs=()
-
-            echo "$jobs_json" | jq -r '.jobs[] | "\(.name)|\(.conclusion)"' 2>/dev/null | while IFS='|' read -r name conclusion; do
-              [ -z "$name" ] && continue
-              echo "  $name: $conclusion"
-              if [ "$conclusion" != "success" ]; then
-                all_passed=false
-                failed_jobs+=("$name")
-              else
-                passed_jobs+=("$name")
-              fi
-            done
-
+          # 检查是否所有测试都通过
+          if [[ "${{ needs.core-validation.result }}" == "success" ]] && \
+             [[ "${{ needs.docker-integration.result }}" == "success" ]] && \
+             [[ "${{ needs.test-macos.result }}" == "success" ]]; then
+            echo "========================================"
+            echo "  ALL REAL INSTALLATION TESTS PASSED!"
+            echo "========================================"
             echo ""
+            echo "Verified that install.sh works correctly on:"
+            echo "  - Ubuntu 22.04 (apt)"
+            echo "  - Fedora (dnf)"
+            echo "  - Debian 12 (apt)"
+            echo "  - macOS"
+            exit 0
+          else
             echo "========================================"
-            echo "  Passed: ${#passed_jobs[@]} | Failed: ${#failed_jobs[@]}"
+            echo "  SOME TESTS FAILED!"
             echo "========================================"
-
-            if [ "$all_passed" = true ]; then
-              echo ""
-              echo "========================================"
-              echo "  ALL REAL INSTALLATION TESTS PASSED!"
-              echo "========================================"
-              exit 0
-            else
-              echo ""
-              echo "========================================"
-              echo "  SOME TESTS FAILED!"
-              echo "========================================"
-              exit 1
-            fi
+            exit 1
           fi

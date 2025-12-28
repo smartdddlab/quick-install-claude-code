@@ -239,9 +239,12 @@ jobs:
 
           # 真实执行安装脚本（不使用 DRY_RUN）
           set +e  # 允许错误继续，以便收集日志
-          bash install.sh 2>&1 | tee /tmp/install.log
-          exit_code=${PIPESTATUS[0]}
+          bash install.sh > /tmp/install.log 2>&1
+          exit_code=$?
           set -e
+
+          # 显示日志
+          cat /tmp/install.log
 
           # 记录结束时间
           end_time=$(date +%s)
@@ -414,9 +417,12 @@ jobs:
 
           # 真实执行安装脚本
           set +e
-          bash install.sh 2>&1 | tee /tmp/install.log
-          exit_code=${PIPESTATUS[0]}
+          bash install.sh > /tmp/install.log 2>&1
+          exit_code=$?
           set -e
+
+          # 显示日志
+          cat /tmp/install.log
 
           end_time=$(date +%s)
           duration=$((end_time - start_time))

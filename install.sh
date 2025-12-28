@@ -202,31 +202,41 @@ load_nvm() {
 install_nvm() {
     log_step "安装 nvm $NVM_VERSION..."
     if [ "$DRY_RUN" == "1" ]; then
-        log_debug "git clone https://gitee.com/mirrors/nvm.git \$NVM_DIR && cd \$NVM_DIR && git checkout $NVM_VERSION"
+        log_debug "git clone https://gitee.com/mirrors/nvm.git \$NVM_DIR"
         return 0
     fi
 
-    # 检查 nvm 是否已安装
-    if [ -d "$NVM_DIR" ]; then
+    # 确保 NVM_DIR 变量设置正确
+    export NVM_DIR="$HOME/.nvm"
+
+    # 检查 nvm 是否已正确安装（检查 nvm.sh 文件）
+    if [ -s "$NVM_DIR/nvm.sh" ]; then
         log_info "nvm 已安装于 $NVM_DIR"
     else
-        # 使用 Gitee 镜像源下载 nvm（国内网络加速）
-        log_info "从 Gitee 镜像下载 nvm..."
-        git clone --depth 1 https://gitee.com/mirrors/nvm.git "$NVM_DIR" 2>/dev/null || {
-            # 如果 git clone 失败，回退到 curl 方式
-            log_warn "Gitee 下载失败，尝试使用官方源..."
-            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash
-        }
+        # nvm.sh 不存在，需要安装
+        log_info "正在安装 nvm..."
 
-        if [ -d "$NVM_DIR" ]; then
-            log_info "nvm 下载完成"
-            # 检出指定版本
-            cd "$NVM_DIR" && git fetch --depth 1 origin "$NVM_VERSION" && git checkout "$NVM_VERSION" 2>/dev/null || true
+        # 清理可能的不完整安装
+        rm -rf "$NVM_DIR" 2>/dev/null || true
+
+        # 首先使用 Gitee 镜像（国内网络加速）
+        log_info "从 Gitee 镜像下载 nvm..."
+        if git clone --depth 1 https://gitee.com/mirrors/nvm.git "$NVM_DIR"; then
+            log_info "nvm 下载完成，版本: $(git -C "$NVM_DIR" describe --tags 2>/dev/null || echo 'unknown')"
+        else
+            # 如果 Gitee 失败，使用 nvm 官方的 install.sh 脚本
+            log_warn "Gitee 下载失败，尝试使用官方源..."
+            log_info "从 GitHub 下载 nvm..."
+            if curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash; then
+                log_info "nvm 安装完成"
+            else
+                log_error "nvm 安装失败，请检查网络连接或手动安装"
+                return 1
+            fi
         fi
     fi
 
     # 加载 nvm (必须在全局 scope 加载，因为 nvm 是通过函数定义的)
-    export NVM_DIR="$HOME/.nvm"
     if [ -s "$NVM_DIR/nvm.sh" ]; then
         # shellcheck source=/dev/null
         . "$NVM_DIR/nvm.sh" nvm

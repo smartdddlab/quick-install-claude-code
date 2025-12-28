@@ -684,6 +684,8 @@ jobs:
     steps:
       - name: Check all jobs status
         run: |
+          set +e  # 禁用错误时立即退出
+
           echo ""
           echo "========================================"
           echo "  Test Summary"
@@ -692,13 +694,16 @@ jobs:
 
           # 获取所有 jobs 的 JSON 数据
           jobs_json=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --paginate 2>/dev/null)
+          [ -z "$jobs_json" ] && jobs_json="{}"
 
           all_passed=true
 
           # 检查每个 job 的状态
           for keyword in "Static Analysis" "Alpine" "Ubuntu" "Logic Validation" "Test on Linux" "Test on macOS"; do
-            status=$(echo "$jobs_json" | grep -o "\"conclusion\": \"[^\"]*\"" | grep -B1 "$keyword" | grep "conclusion" | cut -d'"' -f4 | head -1)
-            [ -z "$status" ] && status="skipped"
+            status=$(echo "$jobs_json" | grep -o "\"conclusion\": \"[^\"]*\"" 2>/dev/null | grep -B1 "$keyword" 2>/dev/null | grep "conclusion" 2>/dev/null | cut -d'"' -f4 | head -1)
+            if [ -z "$status" ]; then
+              status="skipped"
+            fi
             echo "  $keyword: $status"
             if [ "$status" != "success" ]; then
               all_passed=false

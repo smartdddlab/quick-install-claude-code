@@ -131,6 +131,41 @@ if ($IncludeCcSwitch) {
 
 #=================== 辅助函数 ===================
 
+# 镜像连通性检测
+function Test-MirrorConnectivity {
+    param([string]$Url, [int]$Timeout = 5)
+
+    if (Test-WhatIfMode) {
+        Write-VerboseLog "检测镜像连通性: $Url"
+        return $true
+    }
+
+    try {
+        $response = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec $Timeout -UseBasicParsing
+        return $true
+    } catch {
+        Write-VerboseLog "镜像 $Url 不可用: $_"
+        return $false
+    }
+}
+
+# 获取可用的 npm registry
+function Get-NpmRegistry {
+    param([bool]$UseChina)
+
+    if (-not $UseChina) {
+        return "https://registry.npmjs.org"
+    }
+
+    Write-Step "检测国内镜像连通性..."
+    if (Test-MirrorConnectivity "https://registry.npmmirror.com") {
+        return "https://registry.npmmirror.com"
+    } else {
+        Write-Warning "国内镜像不可用，使用官方镜像"
+        return "https://registry.npmjs.org"
+    }
+}
+
 function Test-WhatIfMode {
     return $WhatIf -or $WhatIfPreference
 }
@@ -1353,7 +1388,7 @@ function Install-ClaudeCode {
     }
 
     # 使用 --registry 参数临时设置镜像，不污染全局 npm 配置
-    $npmRegistry = if ($UseChinaMirror) { "https://registry.npmmirror.com" } else { "https://registry.npmjs.org" }
+    $npmRegistry = Get-NpmRegistry -UseChina $UseChinaMirror
 
     if (Test-WhatIfMode) {
         Write-Host "    [WHATIF] npm install -g @anthropic-ai/claude-code --registry $npmRegistry" -ForegroundColor DarkGray
@@ -1523,7 +1558,7 @@ function Install-SuperClaude {
         Write-Step "通过 npm 全局安装 SuperClaude..."
 
         # 根据镜像设置选择 registry
-        $npmRegistry = if ($UseChinaMirror) { "https://registry.npmmirror.com" } else { "https://registry.npmjs.org" }
+        $npmRegistry = Get-NpmRegistry -UseChina $UseChinaMirror
 
         $npmInstallScript = {
             param($Reg)
@@ -1587,6 +1622,91 @@ function Install-SuperClaude {
         Write-Warning "SuperClaude 安装失败: $_"
         Write-Host "可手动安装或稍后重试" -ForegroundColor Cyan
         return $true  # 失败可继续
+    }
+}
+
+#=================== OpenCode 安装 ===================
+
+function Install-OpenCode {
+    param([string]$InstallPath)
+
+    Write-Header "Step 8: 安装 OpenCode"
+
+    Write-Step "检查 OpenCode 是否已安装..."
+
+    # 检查是否已安装
+    if (Get-Command opencode -ErrorAction SilentlyContinue) {
+        try {
+            $version = opencode --version 2>&1 | Out-String
+            if ($version) {
+                Write-Success "OpenCode 已安装 - $version"
+                return $true
+            }
+        } catch {
+            Write-Success "OpenCode 已安装"
+            return $true
+        }
+    }
+
+    # 检查 npm 是否可用
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Error "npm 不可用，无法安装 OpenCode"
+        Write-Host "  请确保 Node.js 已正确安装" -ForegroundColor Cyan
+        return $false
+    }
+
+    # 获取 npm registry
+    $npmRegistry = Get-NpmRegistry -UseChina $UseChinaMirror
+
+    if (Test-WhatIfMode) {
+        Write-Host "    [WHATIF] npm install -g @opencode/opencode --registry $npmRegistry" -ForegroundColor DarkGray
+        return $true
+    }
+
+    Write-VerboseLog "使用 npm registry: $npmRegistry"
+
+    try {
+        Write-Step "通过 npm 全局安装 OpenCode..."
+
+        $npmInstallScript = {
+            param($Reg)
+            $ErrorActionPreference = 'Continue'
+            npm install -g @opencode/opencode --registry $Reg 2>&1
+            return $LASTEXITCODE
+        }.GetNewClosure()
+
+        $result = Invoke-RetryCommand `
+            -ScriptBlock $npmInstallScript `
+            -Description "OpenCode npm 安装" `
+            -MaxRetries 3 `
+            -RetryDelay 30 `
+            -LongOperation $true `
+            -ArgumentList $npmRegistry
+
+        # 验证是否安装成功
+        if ((Get-Command opencode -ErrorAction SilentlyContinue) -or $result -eq 0) {
+            try {
+                $version = opencode --version 2>&1 | Out-String
+                if ($version) {
+                    Write-Success "OpenCode 安装完成 - $version"
+                } else {
+                    Write-Success "OpenCode 安装完成"
+                }
+                return $true
+            } catch {
+                Write-Success "OpenCode 安装完成"
+                return $true
+            }
+        }
+
+        Write-Warning "OpenCode npm 安装失败，但可继续"
+        Write-Host ""
+        Write-Host "  手动安装: npm install -g @opencode/opencode --registry $npmRegistry" -ForegroundColor Cyan
+        return $true
+
+    } catch {
+        Write-Warning "OpenCode 安装失败: $_"
+        return $true
     }
 }
 
@@ -1932,7 +2052,11 @@ function Start-Installation {
         Test-CancellationRequested
         $null = Install-SuperClaude -InstallPath $installPath
 
-        # Step 8: 完成
+        # Step 8: OpenCode
+        Test-CancellationRequested
+        $null = Install-OpenCode -InstallPath ""
+
+        # Step 9: 完成
         Test-CancellationRequested
         $Script:InstallSuccess = Complete-Installation -InstallPath "$env:USERPROFILE\scoop" -BashPath $bashPath
 

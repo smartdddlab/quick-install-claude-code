@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.0] - 2025-01-21
+
+### Added
+- 镜像连通性自动检测与切换（npm/nvm 镜像）
+- macOS Homebrew 自动安装与配置（使用中科大镜像）
+- macOS 通过 Homebrew 安装 uv（避免 Rust 依赖）
+- OpenCode 自动安装（Windows/Linux/macOS）
+- install_or_update_brew 和 install_uv_macos 函数
+- check_mirror_connectivity 和 install_opencode 函数
+
+### Changed
+- install_uv 函数对 macOS 优先使用 brew 路径
+- configure_npm_mirror 函数增加镜像连通性检测
+- install_nvm 函数增加镜像自动切换逻辑
+- PowerShell 添加 Test-MirrorConnectivity 和 Get-NpmRegistry 函数
+
+### Fixed
+- 解决 macOS 上 uv 安装导致 Rust 依赖问题
+- 修复国内镜像不可用时安装失败问题（自动切换官方源）
+- 更新 Shell 配置支持 Homebrew 环境变量
+
+### Removed
+- 无
+
 ## [v1.1.0] - 2025-12-28
 
 ### Added
@@ -37,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SuperClaude 安装
 - Shell 配置文件自动配置
 
+[v1.2.0]: https://github.com/smartdddlab/quick-install-claude-code/compare/v1.1.0...v1.2.0
 [v1.1.0]: https://github.com/smartdddlab/quick-install-claude-code/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/smartdddlab/quick-install-claude-code/releases/tag/v1.0.0

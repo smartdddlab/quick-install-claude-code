@@ -22,9 +22,8 @@ $env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw
 
 ### Linux / macOS
 ```bash
-# 一键安装（国内镜像）
+# 一键安装（国内镜像，自动切换）
 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
-
 ```
 ```Bash
 # 跳过 SuperClaude
@@ -45,12 +44,22 @@ DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install
 1. Git → uv → Node.js (Scoop)
 2. **Claude Code (npm)** ⭐
 3. SuperClaude
+4. **OpenCode** 🆕
 
-### Linux / macOS
+### Linux
 1. nvm → Node.js LTS
 2. uv → Python 3.12
 3. **Claude Code (npm)** ⭐
 4. SuperClaude
+5. **OpenCode** 🆕
+
+### macOS
+1. Homebrew → uv (避免 Rust 依赖) 🆕
+2. nvm → Node.js LTS
+3. Python 3.12
+4. **Claude Code (npm)** ⭐
+5. SuperClaude
+6. **OpenCode** 🆕
 
 ## 安装后
 
@@ -61,6 +70,7 @@ DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install
 claude --version
 uv --version
 node --version
+opencode --version  # 新增
 ```
 
 ## 命令行参数
@@ -86,6 +96,23 @@ node --version
 - 至少 5GB 磁盘空间
 - 需要互联网连接
 
+## 新增功能 ✨
+
+### 镜像自动切换 🆕
+- 自动检测国内镜像连通性
+- 不可用时自动切换到官方源
+- 支持 VPN 环境，智能选择最佳源
+
+### macOS Homebrew 支持 🆕
+- 自动安装 Homebrew（使用中科大镜像）
+- 通过 Homebrew 安装 uv（避免 Rust 依赖）
+- 兼容 Apple Silicon 和 Intel 芯片
+
+### OpenCode 安装 🆕
+- 自动安装 OpenCode 工具
+- 支持 Windows/Linux/macOS 三平台
+- 使用 npm 全局安装
+
 ## 故障排除
 
 ### 执行策略限制
@@ -107,9 +134,18 @@ claude --version
 npm install -g @anthropic-ai/claude-code
 ```
 
+### macOS 镜像问题
+```bash
+# 如果 Homebrew 安装失败，手动切换镜像
+export HOMEBREW_BREW_GIT_REMOTE="https://github.com/Homebrew/brew.git"
+export HOMEBREW_CORE_GIT_REMOTE="https://github.com/Homebrew/homebrew-core.git"
+```
+
 ## 参考
 
 - [Scoop 包管理器](https://scoop.sh/)
 - [uv 文档](https://docs.astral.sh/uv/)
 - [SuperClaude Framework](https://github.com/SuperClaude-Org/SuperClaude_Framework)
 - [Claude Code 文档](https://docs.claude.com/)
+- [OpenCode](https://github.com/anomalyco/opencode)
+

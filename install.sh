@@ -8,7 +8,7 @@ set -euo pipefail  # 错误即停、变量未定义警告、管道错误捕获
 # Based on: implementation-plan.md
 
 # 脚本元信息
-SCRIPT_VERSION="v1.1.0"
+SCRIPT_VERSION="v1.2.0"
 NVM_VERSION="v0.40.3"
 
 # 颜色输出
@@ -34,6 +34,27 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
 log_debug() { [ "$DRY_RUN" == "1" ] && echo -e "${GREEN}[DEBUG]${NC} $1"; }
+
+# ================================================
+# 镜像连通性检测
+# ================================================
+
+# 检测镜像连通性
+check_mirror_connectivity() {
+    local mirror_url="$1"
+    local timeout=5
+
+    if [ "$DRY_RUN" == "1" ]; then
+        log_debug "检测镜像连通性: $mirror_url"
+        return 0
+    fi
+
+    if curl --connect-timeout "$timeout" -sSf --head "$mirror_url" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
 
 # ================================================
 # Phase 2: 环境检测
@@ -180,6 +201,64 @@ check_dependencies() {
 # Phase 3: 安装函数
 # ================================================
 
+# 检测并安装 Homebrew (macOS)
+install_or_update_brew() {
+    if command_exists brew; then
+        log_info "Homebrew 已安装: $(brew --version 2>&1 | head -1)"
+        return 0
+    fi
+
+    log_step "安装 Homebrew..."
+
+    if [ "$DRY_RUN" == "1" ]; then
+        log_debug "从 https://mirrors.ustc.edu.cn/brew/install.sh 安装 Homebrew"
+        return 0
+    fi
+
+    # 使用中科大镜像安装
+    export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.ustc.edu.cn/brew.git"
+    export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.ustc.edu.cn/homebrew-core.git"
+    export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles"
+
+    /bin/bash -c "$(curl -fsSL https://mirrors.ustc.edu.cn/brew/install.sh)"
+
+    # 配置环境变量（Apple Silicon 和 Intel 不同）
+    if [[ "$(uname -m)" == "arm64" ]]; then
+        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    else
+        echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+
+    log_info "Homebrew 安装完成"
+}
+
+# macOS 使用 brew 安装 uv（避免 Rust 依赖）
+install_uv_macos() {
+    install_or_update_brew
+
+    if command_exists uv; then
+        log_info "uv 已安装: $(uv --version | cut -d' ' -f1)"
+        return 0
+    fi
+
+    log_step "使用 Homebrew 安装 uv..."
+
+    if [ "$DRY_RUN" == "1" ]; then
+        log_debug "brew install uv"
+        return 0
+    fi
+
+    brew install uv
+
+    if command_exists uv; then
+        log_info "uv 安装完成: $(uv --version)"
+    else
+        log_warn "uv 安装后验证失败"
+    fi
+}
+
 # 加载 nvm
 load_nvm() {
     if [ -z "${NVM_DIR:-}" ]; then
@@ -219,13 +298,18 @@ install_nvm() {
         # 清理可能的不完整安装
         rm -rf "$NVM_DIR" 2>/dev/null || true
 
-        # 首先使用 Gitee 镜像（国内网络加速）
-        log_info "从 Gitee 镜像下载 nvm..."
-        if git clone --depth 1 https://gitee.com/mirrors/nvm.git "$NVM_DIR"; then
-            log_info "nvm 下载完成，版本: $(git -C "$NVM_DIR" describe --tags 2>/dev/null || echo 'unknown')"
+        # 优先使用 Gitee 镜像（国内网络加速），如果启用国内镜像
+        if [ "$USE_CHINA_MIRROR" == "1" ]; then
+            log_info "尝试从 Gitee 镜像下载 nvm..."
+            if git clone --depth 1 https://gitee.com/mirrors/nvm.git "$NVM_DIR"; then
+                log_info "nvm 下载完成（Gitee 镜像），版本: $(git -C "$NVM_DIR" describe --tags 2>/dev/null || echo 'unknown')"
+            else
+                log_warn "Gitee 镜像不可用，使用官方源..."
+                curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash
+                log_info "nvm 安装完成（官方源）"
+            fi
         else
-            # 如果 Gitee 失败，使用 nvm 官方的 install.sh 脚本
-            log_warn "Gitee 下载失败，尝试使用官方源..."
+            # 使用官方源
             log_info "从 GitHub 下载 nvm..."
             if curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh | bash; then
                 log_info "nvm 安装完成"
@@ -257,6 +341,13 @@ install_uv() {
         return 0
     fi
 
+    # macOS 优先使用 brew（避免 Rust 依赖）
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        install_uv_macos
+        return $?
+    fi
+
+    # Linux 使用官方安装脚本
     log_step "安装 uv..."
     if [ "$DRY_RUN" == "1" ]; then
         log_debug "curl -LsSf https://astral.sh/uv/install.sh | sh"
@@ -374,15 +465,24 @@ install_python() {
 
 # 配置 npm 镜像
 configure_npm_mirror() {
-    if [ "$USE_CHINA_MIRROR" != "1" ]; then
+    local npm_registry="https://registry.npmjs.org"
+
+    if [ "$USE_CHINA_MIRROR" == "1" ]; then
+        log_step "检测国内镜像连通性..."
+        if check_mirror_connectivity "https://registry.npmmirror.com"; then
+            npm_registry="https://registry.npmmirror.com"
+            log_info "使用国内 npm 镜像"
+        else
+            log_warn "国内镜像不可用，使用官方镜像"
+        fi
+    else
         log_info "使用官方 npm 镜像 (registry.npmjs.org)"
-        npm config set registry https://registry.npmjs.org
-        return 0
     fi
 
-    log_step "配置 npm 国内镜像..."
-    npm config set registry https://registry.npmmirror.com
-    log_info "npm 镜像已配置为 registry.npmmirror.com"
+    if [ "$DRY_RUN" != "1" ]; then
+        npm config set registry "$npm_registry"
+    fi
+    log_info "npm 镜像已配置为 $npm_registry"
 }
 
 # 安装 Claude Code
@@ -538,6 +638,31 @@ install_superclaude() {
     fi
 }
 
+# 安装 OpenCode
+install_opencode() {
+    log_step "安装 OpenCode..."
+
+    if command_exists opencode; then
+        local version
+        version=$(opencode --version 2>/dev/null | head -1 || echo "installed")
+        log_info "OpenCode 已安装: $version"
+        return 0
+    fi
+
+    if [ "$DRY_RUN" == "1" ]; then
+        log_debug "npm install -g @opencode/opencode"
+        return 0
+    fi
+
+    npm install -g @opencode/opencode
+
+    if command_exists opencode; then
+        log_info "OpenCode 安装完成"
+    else
+        log_warn "OpenCode 安装验证失败"
+    fi
+}
+
 # 安装 cc-switch
 install_cc_switch() {
     log_step "安装 cc-switch..."
@@ -616,12 +741,32 @@ configure_shell() {
         echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> "$rc_file"
     fi
 
-    # uv 配置 (添加到 PATH)
-    local uv_path='$HOME/.cargo/bin'
-    if ! grep -qF "$uv_path" "$rc_file" 2>/dev/null; then
-        echo "" >> "$rc_file"
-        echo "# uv configuration - Claude Code Installer" >> "$rc_file"
-        echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$rc_file"
+    # uv 配置 (添加到 PATH) - Linux 使用 ~/.cargo/bin
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        local uv_path='$HOME/.cargo/bin'
+        if ! grep -qF "$uv_path" "$rc_file" 2>/dev/null; then
+            echo "" >> "$rc_file"
+            echo "# uv configuration - Claude Code Installer" >> "$rc_file"
+            echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$rc_file"
+        fi
+    fi
+
+    # macOS Homebrew 配置
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if command_exists brew; then
+            local brew_shellenv
+            if [[ "$(uname -m)" == "arm64" ]]; then
+                brew_shellenv='eval "$(/opt/homebrew/bin/brew shellenv)"'
+            else
+                brew_shellenv='eval "$(/usr/local/bin/brew shellenv)"'
+            fi
+
+            if ! grep -q "brew shellenv" "$rc_file" 2>/dev/null; then
+                echo "" >> "$rc_file"
+                echo "# Homebrew configuration - Claude Code Installer" >> "$rc_file"
+                echo "$brew_shellenv" >> "$rc_file"
+            fi
+        fi
     fi
 
     log_info "环境配置已写入 $rc_file"
@@ -686,10 +831,13 @@ main() {
     # 9. 安装 SuperClaude (可选)
     install_superclaude
 
-    # 10. 安装 cc-switch (仅 macOS)
+    # 10. 安装 OpenCode
+    install_opencode
+
+    # 11. 安装 cc-switch (仅 macOS)
     install_cc_switch
 
-    # 11. 环境配置
+    # 12. 环境配置
     configure_shell
 
     echo ""

@@ -617,9 +617,9 @@ install_superclaude() {
         log_info "创建 pip3 symlink: $symlink_dir/pip3 -> $venv_bin/pip3"
     fi
 
-    # 将 symlink 目录添加到 PATH 前置
-    export PATH="$symlink_dir:$PATH"
-    log_info "PATH 已包含: $symlink_dir"
+    # 将 symlink 目录和虚拟环境 bin 目录添加到 PATH 前置
+    export PATH="$venv_bin:$symlink_dir:$PATH"
+    log_info "PATH 已包含: $venv_bin, $symlink_dir"
 
     # 确保 nvm 已加载，npm install -g 会安装到 nvm 的路径
     if ! load_nvm; then
@@ -641,14 +641,26 @@ install_superclaude() {
     fi
 
     # 初始化 SuperClaude
+    # 优先检查 PATH 中的 superclaude
     if command_exists superclaude; then
         superclaude install || log_warn "SuperClaude 初始化可能需要手动运行 'superclaude install'"
+    # 其次检查虚拟环境中的 superclaude
+    elif [ -x "$venv_bin/superclaude" ]; then
+        log_info "找到虚拟环境中的 superclaude: $venv_bin/superclaude"
+        "$venv_bin/superclaude" install || log_warn "SuperClaude 初始化可能需要手动运行 'superclaude install'"
+        # 创建 symlink 到 symlink_dir，方便后续使用
+        if [ -w "$symlink_dir" ]; then
+            ln -sf "$venv_bin/superclaude" "$symlink_dir/superclaude"
+            log_info "创建 superclaude symlink: $symlink_dir/superclaude -> $venv_bin/superclaude"
+        fi
+    # 最后尝试在 nvm node bin 目录中查找
     else
-        # 尝试使用完整路径
         local superclaude_path=$(find "$NVM_DIR/versions/node" -name "superclaude" -type f 2>/dev/null | head -1)
         if [ -n "$superclaude_path" ]; then
             log_info "找到 superclaude: $superclaude_path"
             "$superclaude_path" install || log_warn "SuperClaude 初始化可能需要手动运行 'superclaude install'"
+        else
+            log_warn "未找到 superclaude 命令，请手动运行 'superclaude install'"
         fi
     fi
 
@@ -771,6 +783,16 @@ configure_shell() {
             echo "" >> "$rc_file"
             echo "# uv configuration - Claude Code Installer" >> "$rc_file"
             echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$rc_file"
+        fi
+    fi
+
+    # SuperClaude 虚拟环境配置 (如果存在)
+    local venv_path='$HOME/.cache/superclaude-venv/bin'
+    if [ -d "$HOME/.cache/superclaude-venv/bin" ]; then
+        if ! grep -qF "$venv_path" "$rc_file" 2>/dev/null; then
+            echo "" >> "$rc_file"
+            echo "# SuperClaude venv configuration - Claude Code Installer" >> "$rc_file"
+            echo 'export PATH="$HOME/.cache/superclaude-venv/bin:$PATH"' >> "$rc_file"
         fi
     fi
 

@@ -467,16 +467,15 @@ install_python() {
 configure_npm_mirror() {
     local npm_registry="https://registry.npmjs.org"
 
-    if [ "$USE_CHINA_MIRROR" == "1" ]; then
-        log_step "检测国内镜像连通性..."
-        if check_mirror_connectivity "https://registry.npmmirror.com"; then
-            npm_registry="https://registry.npmmirror.com"
-            log_info "使用国内 npm 镜像"
-        else
-            log_warn "国内镜像不可用，使用官方镜像"
-        fi
+    log_step "检测官方镜像连通性..."
+    if check_mirror_connectivity "https://registry.npmjs.org"; then
+        npm_registry="https://registry.npmjs.org"
+        log_info "使用官方 npm 镜像"
+    elif [ "$USE_CHINA_MIRROR" == "1" ] && check_mirror_connectivity "https://registry.npmmirror.com"; then
+        npm_registry="https://registry.npmmirror.com"
+        log_info "官方镜像不可用，使用国内 npm 镜像"
     else
-        log_info "使用官方 npm 镜像 (registry.npmjs.org)"
+        log_warn "官方和国内镜像均不可用，使用官方镜像 (可能导致安装失败)"
     fi
 
     if [ "$DRY_RUN" != "1" ]; then
@@ -622,12 +621,35 @@ install_superclaude() {
     export PATH="$symlink_dir:$PATH"
     log_info "PATH 已包含: $symlink_dir"
 
-    # 现在 npm install 时，SuperClaude 的 install.js 应该能找到正确的 python3 和 pip3
+    # 确保 nvm 已加载，npm install -g 会安装到 nvm 的路径
+    if ! load_nvm; then
+        log_error "nvm 未加载，无法安装 SuperClaude"
+        return 1
+    fi
+
+    # npm install 时，SuperClaude 的 install.js 应该能找到正确的 python3 和 pip3
     npm install -g @bifrost_inc/superclaude
+
+    # 刷新 PATH 以包含 npm 全局安装的命令
+    # npm 全局安装的命令在 $NVM_DIR/versions/node/*/bin
+    if [ -d "$NVM_DIR/versions/node" ]; then
+        local node_bin=$(find "$NVM_DIR/versions/node" -maxdepth 2 -name "bin" -type d | head -1)
+        if [ -n "$node_bin" ] && [ -d "$node_bin" ]; then
+            export PATH="$node_bin:$PATH"
+            log_info "PATH 已更新: $node_bin"
+        fi
+    fi
 
     # 初始化 SuperClaude
     if command_exists superclaude; then
         superclaude install || log_warn "SuperClaude 初始化可能需要手动运行 'superclaude install'"
+    else
+        # 尝试使用完整路径
+        local superclaude_path=$(find "$NVM_DIR/versions/node" -name "superclaude" -type f 2>/dev/null | head -1)
+        if [ -n "$superclaude_path" ]; then
+            log_info "找到 superclaude: $superclaude_path"
+            "$superclaude_path" install || log_warn "SuperClaude 初始化可能需要手动运行 'superclaude install'"
+        fi
     fi
 
     # 验证安装
@@ -635,6 +657,7 @@ install_superclaude() {
         log_info "SuperClaude 安装完成: $(superclaude --version)"
     else
         log_warn "SuperClaude 安装验证失败，请手动运行 'superclaude install'"
+        log_info "提示: 重启终端或运行: source ~/.bashrc"
     fi
 }
 
@@ -650,11 +673,11 @@ install_opencode() {
     fi
 
     if [ "$DRY_RUN" == "1" ]; then
-        log_debug "npm install -g @opencode/opencode"
+        log_debug "npm install -g opencode-ai"
         return 0
     fi
 
-    npm install -g @opencode/opencode
+    npm install -g opencode-ai
 
     if command_exists opencode; then
         log_info "OpenCode 安装完成"

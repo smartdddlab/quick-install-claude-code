@@ -153,15 +153,14 @@ function Test-MirrorConnectivity {
 function Get-NpmRegistry {
     param([bool]$UseChina)
 
-    if (-not $UseChina) {
+    Write-Step "检测官方镜像连通性..."
+    if (Test-MirrorConnectivity "https://registry.npmjs.org") {
         return "https://registry.npmjs.org"
-    }
-
-    Write-Step "检测国内镜像连通性..."
-    if (Test-MirrorConnectivity "https://registry.npmmirror.com") {
+    } elseif ($UseChina -and (Test-MirrorConnectivity "https://registry.npmmirror.com")) {
+        Write-Warning "官方镜像不可用，使用国内镜像"
         return "https://registry.npmmirror.com"
     } else {
-        Write-Warning "国内镜像不可用，使用官方镜像"
+        Write-Warning "官方和国内镜像均不可用，使用官方镜像 (可能导致安装失败)"
         return "https://registry.npmjs.org"
     }
 }
@@ -1659,7 +1658,7 @@ function Install-OpenCode {
     $npmRegistry = Get-NpmRegistry -UseChina $UseChinaMirror
 
     if (Test-WhatIfMode) {
-        Write-Host "    [WHATIF] npm install -g @opencode/opencode --registry $npmRegistry" -ForegroundColor DarkGray
+        Write-Host "    [WHATIF] npm install -g opencode-ai --registry $npmRegistry" -ForegroundColor DarkGray
         return $true
     }
 
@@ -1671,7 +1670,7 @@ function Install-OpenCode {
         $npmInstallScript = {
             param($Reg)
             $ErrorActionPreference = 'Continue'
-            npm install -g @opencode/opencode --registry $Reg 2>&1
+            npm install -g opencode-ai --registry $Reg 2>&1
             return $LASTEXITCODE
         }.GetNewClosure()
 
@@ -1701,7 +1700,7 @@ function Install-OpenCode {
 
         Write-Warning "OpenCode npm 安装失败，但可继续"
         Write-Host ""
-        Write-Host "  手动安装: npm install -g @opencode/opencode --registry $npmRegistry" -ForegroundColor Cyan
+        Write-Host "  手动安装: npm install -g opencode-ai --registry $npmRegistry" -ForegroundColor Cyan
         return $true
 
     } catch {

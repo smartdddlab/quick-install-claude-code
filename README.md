@@ -5,8 +5,8 @@
 ## 快速开始
 
 ### Windows
+- **一键安装（推荐）**
 ```powershell
-# 一键安装（推荐）
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.ps1 | iex
 ```
@@ -21,8 +21,9 @@ $env:CLAUDE_INSTALL_DRIVE="D"; $env:CLAUDE_SKIP_SUPERCLAUDE="1"; irm https://raw
 ```
 
 ### Linux / macOS
+
 ```bash
-# 一键安装（国内镜像，自动切换）
+# 一键安装
 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
 ```
 ```Bash
@@ -33,7 +34,7 @@ CLAUDE_SKIP_SUPERCLAUDE=1 curl -LsSf https://raw.githubusercontent.com/smartdddl
 DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install-claude-code/main/install.sh | bash
 ```
 
-**注意**: 安装完成后请重启终端或运行 `source ~/.bashrc` / `source ~/.zshrc`
+**注意**: 安装完成后请关闭当前终端并打开一个新终端以使用 Claude Code
 
 ## scoop 国内镜像源
 [https://gitee.com/scoop-installer-mirrors](https://gitee.com/scoop-installer-mirrors)
@@ -45,6 +46,7 @@ DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install
 2. **Claude Code (npm)** ⭐
 3. SuperClaude
 4. **OpenCode** 🆕
+5. **AgentStudio** ⭐
 
 ### Linux
 1. nvm → Node.js LTS
@@ -52,6 +54,7 @@ DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install
 3. **Claude Code (npm)** ⭐
 4. SuperClaude
 5. **OpenCode** 🆕
+6. **AgentStudio** ⭐
 
 ### macOS
 1. Homebrew → uv (避免 Rust 依赖) 🆕
@@ -60,17 +63,20 @@ DRY_RUN=1 curl -LsSf https://raw.githubusercontent.com/smartdddlab/quick-install
 4. **Claude Code (npm)** ⭐
 5. SuperClaude
 6. **OpenCode** 🆕
+7. **AgentStudio** ⭐
 
 ## 安装后
 
-1. **重启终端**使环境变量生效
+1. **关闭当前终端并打开一个新终端**使环境变量生效
 2. 运行 `claude` 启动 Claude Code
-3. 验证安装：
+3. 启动 AgentStudio Web 界面：`agentstudio`
+4. 验证安装：
 ```bash
 claude --version
 uv --version
 node --version
 opencode --version  # 新增
+agentstudio --version  # 新增
 ```
 
 ## 命令行参数
@@ -80,6 +86,7 @@ opencode --version  # 新增
 |------|------|------|
 | `-WhatIf` | 预览安装 | `.\install.ps1 -WhatIf` |
 | `-SkipSuperClaude` | 跳过 SuperClaude | `.\install.ps1 -SkipSuperClaude` |
+| `-SkipAgentStudio` | 跳过 AgentStudio | `.\install.ps1 -SkipAgentStudio` |
 | `-InstallDrive <盘符>` | 指定安装盘 | `.\install.ps1 -InstallDrive D` |
 
 ### Linux/macOS (install.sh)
@@ -87,6 +94,7 @@ opencode --version  # 新增
 |----------|------|------|
 | `DRY_RUN=1` | 预览模式 | `DRY_RUN=1 bash install.sh` |
 | `CLAUDE_SKIP_SUPERCLAUDE=1` | 跳过 SuperClaude | `CLAUDE_SKIP_SUPERCLAUDE=1 bash install.sh` |
+| `CLAUDE_SKIP_AGENTSTUDIO=1` | 跳过 AgentStudio | `CLAUDE_SKIP_AGENTSTUDIO=1 bash install.sh` |
 | `CLAUDE_USE_CHINA_MIRROR=0` | 使用官方镜像 | `CLAUDE_USE_CHINA_MIRROR=0 bash install.sh` |
 
 ## 系统要求
@@ -148,4 +156,3 @@ export HOMEBREW_CORE_GIT_REMOTE="https://github.com/Homebrew/homebrew-core.git"
 - [SuperClaude Framework](https://github.com/SuperClaude-Org/SuperClaude_Framework)
 - [Claude Code 文档](https://docs.claude.com/)
 - [OpenCode](https://github.com/anomalyco/opencode)
-

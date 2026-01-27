@@ -9,6 +9,7 @@
 param(
     [switch]$WhatIf,
     [switch]$SkipSuperClaude,
+    [switch]$SkipAgentStudio,
     [switch]$IncludeCcSwitch,
     [switch]$UseChinaMirror,  # 默认启用国内镜像
     [string]$InstallDrive,
@@ -28,23 +29,36 @@ if (-not $SkipSuperClaude -and $env:CLAUDE_SKIP_SUPERCLAUDE) {
         Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_SKIP_SUPERCLAUDE: true" -ForegroundColor Gray
     }
 }
+if (-not $SkipAgentStudio -and $env:CLAUDE_SKIP_AGENTSTUDIO) {
+    $SkipAgentStudio = $true
+    if ($VerbosePreference -ne 'SilentlyContinue') {
+        Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_SKIP_AGENTSTUDIO: true" -ForegroundColor Gray
+    }
+}
 if (-not $IncludeCcSwitch -and $env:CLAUDE_INCLUDE_CC_SWITCH) {
     $IncludeCcSwitch = $true
     if ($VerbosePreference -ne 'SilentlyContinue') {
         Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_INCLUDE_CC_SWITCH: true" -ForegroundColor Gray
     }
 }
-if (-not $UseChinaMirror -and $env:CLAUDE_USE_CHINA_MIRROR -eq '1') {
-    $UseChinaMirror = $true
-    if ($VerbosePreference -ne 'SilentlyContinue') {
-        Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_USE_CHINA_MIRROR: true" -ForegroundColor Gray
-    }
-}
-# 默认启用国内镜像
-if (-not $PSBoundParameters.ContainsKey('UseChinaMirror') -and -not $env:CLAUDE_USE_CHINA_MIRROR) {
-    $UseChinaMirror = $true
-    if ($VerbosePreference -ne 'SilentlyContinue') {
-        Write-Host "    [VERBOSE] 默认启用国内镜像" -ForegroundColor Gray
+# 修复: 正确处理 CLAUDE_USE_CHINA_MIRROR 环境变量（支持显式禁用）
+if (-not $PSBoundParameters.ContainsKey('UseChinaMirror')) {
+    if ($env:CLAUDE_USE_CHINA_MIRROR -eq '1') {
+        $UseChinaMirror = $true
+        if ($VerbosePreference -ne 'SilentlyContinue') {
+            Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_USE_CHINA_MIRROR: true" -ForegroundColor Gray
+        }
+    } elseif ($env:CLAUDE_USE_CHINA_MIRROR -eq '0') {
+        $UseChinaMirror = $false
+        if ($VerbosePreference -ne 'SilentlyContinue') {
+            Write-Host "    [VERBOSE] 使用环境变量 CLAUDE_USE_CHINA_MIRROR: false" -ForegroundColor Gray
+        }
+    } else {
+        # 默认启用国内镜像
+        $UseChinaMirror = $true
+        if ($VerbosePreference -ne 'SilentlyContinue') {
+            Write-Host "    [VERBOSE] 默认启用国内镜像" -ForegroundColor Gray
+        }
     }
 }
 
@@ -99,11 +113,20 @@ try {
 
 #=================== 变量初始化 ===================
 # 处理 $PSScriptRoot 在 irm | iex 场景下未定义的问题
-$scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { $env:TEMP }
+# 确定有效的临时目录
+$tempDir = $env:TEMP
+if (-not $tempDir -or -not (Test-Path $tempDir)) {
+    $tempDir = "C:\Windows\Temp"
+}
+if (-not (Test-Path $tempDir)) {
+    # 最后的兜底方案
+    $tempDir = $env:USERPROFILE
+}
+$scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { $tempDir }
 
 $Script:InstallSuccess = $false
-# 临时日志路径 - 在驱动器选择前使用 TEMP 目录
-$Script:LogFile = "$env:TEMP\claude-install-temp.log"
+# 临时日志路径 - 在驱动器选择前使用临时目录
+$Script:LogFile = "$tempDir\claude-install-temp.log"
 
 #=================== 辅助函数 ===================
 
@@ -218,22 +241,28 @@ function Write-Error {
 # AC 36: 检查并发安装
 function Test-ConcurrentInstallation {
     if (Test-Path $Script:LockFilePath) {
-        $lockContent = Get-Content $Script:LockFilePath -ErrorAction SilentlyContinue
-        $lockTime = [DateTime]::Parse($lockContent)
-        $timeDiff = (Get-Date) - $lockTime
+        try {
+            $lockContent = Get-Content $Script:LockFilePath -ErrorAction Stop
+            if (-not [string]::IsNullOrWhiteSpace($lockContent)) {
+                $lockTime = [DateTime]::Parse($lockContent)
+                $timeDiff = (Get-Date) - $lockTime
 
-        if ($timeDiff.TotalMinutes -lt 30) {
-            Write-Error "检测到另一个安装进程正在运行 (锁文件于 $([math]::Round($timeDiff.TotalMinutes, 1)) 分钟前创建)"
-            Write-Host "  如确定没有其他安装进程，请删除: $Script:LockFilePath" -ForegroundColor Cyan
-            return $false
-        } else {
-            # 锁文件过期，移除
-            Remove-Item $Script:LockFilePath -Force -ErrorAction SilentlyContinue
+                if ($timeDiff.TotalMinutes -lt 30) {
+                    Write-Error "检测到另一个安装进程正在运行 (锁文件于 $([math]::Round($timeDiff.TotalMinutes, 1)) 分钟前创建)"
+                    Write-Host "  如确定没有其他安装进程，请删除: $Script:LockFilePath" -ForegroundColor Cyan
+                    return $false
+                }
+            }
+        } catch {
+            # 日期解析失败或文件内容无效，移除锁文件并继续
+            Write-VerboseLog "锁文件无效或解析失败: $_"
         }
+        # 移除无效或过期的锁文件
+        Remove-Item $Script:LockFilePath -Force -ErrorAction SilentlyContinue
     }
 
-    # 创建锁文件
-    Get-Date | Out-File -FilePath $Script:LockFilePath -Force
+    # 创建锁文件，使用 ISO 8601 格式确保跨系统兼容
+    (Get-Date).ToString("o") | Out-File -FilePath $Script:LockFilePath -Force
     return $true
 }
 
@@ -252,18 +281,28 @@ function Invoke-RetryCommand {
 
     while ($attempt -lt $MaxRetries) {
         $attempt++
+        $exitCode = 0
+        $output = $null
+        $errorMsg = $null
+
         try {
+            $ErrorActionPreference = 'Continue'
             $result = & $ScriptBlock @ArgumentList
-            if ($LASTEXITCODE -eq 0) {
-                if ($attempt -gt 1) {
-                    Write-Success "$Description 成功 (第 $attempt 次尝试)"
-                } else {
-                    Write-VerboseLog "$Description 成功 (尝试 $attempt/$MaxRetries)"
-                }
-                return $result
-            }
+            $exitCode = $LASTEXITCODE
+            $output = if ($result) { $result | Out-String } else { $null }
         } catch {
-            Write-VerboseLog "$Description 失败 (尝试 $attempt/$MaxRetries): $_"
+            $exitCode = 1
+            $errorMsg = $_.Exception.Message
+            Write-VerboseLog "$Description 异常 (尝试 $attempt/$MaxRetries): $errorMsg"
+        }
+
+        if ($exitCode -eq 0 -and -not $errorMsg) {
+            if ($attempt -gt 1) {
+                Write-Success "$Description 成功 (第 $attempt 次尝试)"
+            } else {
+                Write-VerboseLog "$Description 成功 (尝试 $attempt/$MaxRetries)"
+            }
+            return $result
         }
 
         if ($attempt -lt $MaxRetries) {
@@ -1168,17 +1207,33 @@ function Configure-ScoopChinaMirror {
     Write-VerboseLog "配置 Scoop 仓库镜像..."
     scoop config scoop_repo https://gitee.com/scoop-installer-mirrors/Scoop
 
+    # 验证仓库配置是否生效
+    $repoConfig = scoop config scoop_repo 2>&1 | Out-String
+    if ($repoConfig -notmatch 'gitee') {
+        Write-Warning "Scoop 仓库镜像配置可能失败，尝试回退到官方源"
+        scoop config scoop_repo https://github.com/ScoopInstaller/Scoop
+    }
+
     # 添加 main bucket 镜像
     Write-VerboseLog "添加 main bucket..."
     $buckets = scoop bucket list 2>&1 | Out-String
     if ($buckets -notmatch 'main') {
-        scoop bucket add main https://gitee.com/scoop-installer-mirrors/Main
+        Write-Host "  添加 main bucket..." -ForegroundColor Gray
+        $bucketResult = scoop bucket add main https://gitee.com/scoop-installer-mirrors/Main 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "main bucket 添加失败，尝试官方源: $bucketResult"
+            scoop bucket add main 2>&1 | Out-Null
+        }
     }
 
     # 添加 extras bucket 镜像
     Write-VerboseLog "添加 extras bucket..."
     if ($buckets -notmatch 'extras') {
-        scoop bucket add extras https://gitee.com/scoop-installer-mirrors/Extras
+        Write-Host "  添加 extras bucket..." -ForegroundColor Gray
+        $bucketResult = scoop bucket add extras 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "extras bucket 添加失败: $bucketResult"
+        }
     }
 
     Write-Success "国内镜像配置完成"
@@ -1709,6 +1764,99 @@ function Install-OpenCode {
     }
 }
 
+#=================== AgentStudio 安装 ===================
+
+function Install-AgentStudio {
+    param(
+        [string]$InstallPath,
+        [bool]$SkipAgentStudio
+    )
+
+    if ($SkipAgentStudio) {
+        Write-Warning "跳过 AgentStudio 安装"
+        return $true
+    }
+
+    Write-Header "Step 9: 安装 AgentStudio"
+
+    Write-Step "检查 AgentStudio 是否已安装..."
+
+    # 检查是否已安装
+    if (Get-Command agentstudio -ErrorAction SilentlyContinue) {
+        try {
+            $version = agentstudio --version 2>&1 | Out-String
+            if ($version) {
+                Write-Success "AgentStudio 已安装 - $version"
+                return $true
+            }
+        } catch {
+            Write-Success "AgentStudio 已安装"
+            return $true
+        }
+    }
+
+    # 检查 npm 是否可用
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Error "npm 不可用，无法安装 AgentStudio"
+        Write-Host "  请确保 Node.js 已正确安装" -ForegroundColor Cyan
+        return $false
+    }
+
+    # 获取 npm registry
+    $npmRegistry = Get-NpmRegistry -UseChina $UseChinaMirror
+
+    if (Test-WhatIfMode) {
+        Write-Host "    [WHATIF] npm install -g agentstudio --registry $npmRegistry" -ForegroundColor DarkGray
+        return $true
+    }
+
+    Write-VerboseLog "使用 npm registry: $npmRegistry"
+
+    try {
+        Write-Step "通过 npm 全局安装 AgentStudio..."
+
+        $npmInstallScript = {
+            param($Reg)
+            $ErrorActionPreference = 'Continue'
+            npm install -g agentstudio --registry $Reg 2>&1
+            return $LASTEXITCODE
+        }.GetNewClosure()
+
+        $result = Invoke-RetryCommand `
+            -ScriptBlock $npmInstallScript `
+            -Description "AgentStudio npm 安装" `
+            -MaxRetries 3 `
+            -RetryDelay 30 `
+            -LongOperation $true `
+            -ArgumentList $npmRegistry
+
+        # 验证是否安装成功
+        if ((Get-Command agentstudio -ErrorAction SilentlyContinue) -or $result -eq 0) {
+            try {
+                $version = agentstudio --version 2>&1 | Out-String
+                if ($version) {
+                    Write-Success "AgentStudio 安装完成 - $version"
+                } else {
+                    Write-Success "AgentStudio 安装完成"
+                }
+                return $true
+            } catch {
+                Write-Success "AgentStudio 安装完成"
+                return $true
+            }
+        }
+
+        Write-Warning "AgentStudio npm 安装失败，但可继续"
+        Write-Host ""
+        Write-Host "  手动安装: npm install -g agentstudio --registry $npmRegistry" -ForegroundColor Cyan
+        return $true
+
+    } catch {
+        Write-Warning "AgentStudio 安装失败: $_"
+        return $true
+    }
+}
+
 #=================== RefreshEnv.cmd ===================
 
 function New-RefreshEnvScript {
@@ -1908,7 +2056,7 @@ function Complete-Installation {
     Write-Host "日志文件: $Script:LogFile" -ForegroundColor Gray
     Write-Host ""
     Write-Host "下一步操作:" -ForegroundColor Yellow
-    Write-Host "  1. 重启终端刷新环境" -ForegroundColor Cyan
+    Write-Host "  1. 请关闭当前终端并打开一个新终端" -ForegroundColor Cyan
     Write-Host "  2. Claude Code CLI 命令为 'claude'" -ForegroundColor Cyan
     Write-Host "  3. 运行 'claude -h' 验证" -ForegroundColor Cyan
     Write-Host ""
@@ -1916,7 +2064,7 @@ function Complete-Installation {
     # AC 32: 快速入门指引
     Write-Host "快速入门:" -ForegroundColor Yellow
     Write-Host "  - Git Bash 路径: $BashPath" -ForegroundColor Gray
-    Write-Host "  - 环境变量已配置，请重启终端" -ForegroundColor Gray
+    Write-Host "  - 环境变量已在新终端中生效" -ForegroundColor Gray
     Write-Host "  - 日志保存在: $Script:LogFile" -ForegroundColor Gray
     Write-Host ""
 
@@ -2055,7 +2203,11 @@ function Start-Installation {
         Test-CancellationRequested
         $null = Install-OpenCode -InstallPath ""
 
-        # Step 9: 完成
+        # Step 9: 安装 AgentStudio
+        Test-CancellationRequested
+        $null = Install-AgentStudio -InstallPath "" -SkipAgentStudio $SkipAgentStudio
+
+        # Step 10: 完成
         Test-CancellationRequested
         $Script:InstallSuccess = Complete-Installation -InstallPath "$env:USERPROFILE\scoop" -BashPath $bashPath
 

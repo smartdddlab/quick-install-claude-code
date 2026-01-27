@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail  # 错误即停、变量未定义警告、管道错误捕获
 
 # ================================================
@@ -21,6 +21,7 @@ NC='\033[0m' # No Color
 # 默认配置
 SKIP_SUPERCLAUDE="${CLAUDE_SKIP_SUPERCLAUDE:-0}"
 SKIP_CLAUDE_CODE="${SKIP_CLAUDE_CODE:-0}"
+SKIP_AGENTSTUDIO="${CLAUDE_SKIP_AGENTSTUDIO:-0}"
 USE_CHINA_MIRROR="${CLAUDE_USE_CHINA_MIRROR:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -39,17 +40,22 @@ log_debug() { [ "$DRY_RUN" == "1" ] && echo -e "${GREEN}[DEBUG]${NC} $1"; }
 # 镜像连通性检测
 # ================================================
 
-# 检测镜像连通性
+# 检测镜像连通性（macOS 兼容版本）
 check_mirror_connectivity() {
     local mirror_url="$1"
-    local timeout=5
+    local timeout=${CURL_TIMEOUT:-10}  # macOS 默认超时 10 秒
 
     if [ "$DRY_RUN" == "1" ]; then
         log_debug "检测镜像连通性: $mirror_url"
         return 0
     fi
 
-    if curl --connect-timeout "$timeout" -sSf --head "$mirror_url" >/dev/null 2>&1; then
+    # macOS curl 兼容：使用 --fail-with-body 或降级处理
+    if curl --connect-timeout "$timeout" \
+           --max-time "$((timeout * 2))" \
+           -sSf \
+           --fail \
+           "$mirror_url" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -222,16 +228,42 @@ install_or_update_brew() {
 
     /bin/bash -c "$(curl -fsSL https://mirrors.ustc.edu.cn/brew/install.sh)"
 
-    # 配置环境变量（Apple Silicon 和 Intel 不同）
-    if [[ "$(uname -m)" == "arm64" ]]; then
-        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    else
-        echo 'eval "$(/usr/local/bin/brew shellenv)"' >> ~/.zprofile
-        eval "$(/usr/local/bin/brew shellenv)"
+    # 检测 Homebrew 安装路径并配置环境变量
+    local brew_prefix
+    brew_prefix=$(detect_brew_prefix) || brew_prefix="/opt/homebrew"
+    local brew_shellenv="eval \"$brew_prefix/bin/brew shellenv\""
+
+    # 写入与脚本后续配置相同的配置文件（~/.zshrc 或 ~/.bashrc）
+    local shell_type
+    shell_type=$(detect_shell)
+    local rc_file="$HOME/.bashrc"
+    if [ "$shell_type" == "zsh" ]; then
+        rc_file="$HOME/.zshrc"
     fi
 
+    if ! grep -q "brew shellenv" "$rc_file" 2>/dev/null; then
+        echo "" >> "$rc_file"
+        echo "# Homebrew configuration - Claude Code Installer" >> "$rc_file"
+        echo "$brew_shellenv" >> "$rc_file"
+    fi
+
+    eval "$brew_shellenv"
     log_info "Homebrew 安装完成"
+}
+
+# 动态检测 Homebrew 前缀（macOS 兼容）
+detect_brew_prefix() {
+    if command -v brew >/dev/null 2>&1; then
+        brew --prefix 2>/dev/null
+        return 0
+    elif [ -d "/opt/homebrew" ]; then
+        echo "/opt/homebrew"
+        return 0
+    elif [ -d "/usr/local" ]; then
+        echo "/usr/local"
+        return 0
+    fi
+    return 1
 }
 
 # macOS 使用 brew 安装 uv（避免 Rust 依赖）
@@ -259,10 +291,10 @@ install_uv_macos() {
     fi
 }
 
-# 加载 nvm
+# 加载 nvm（当前 shell 中加载，不使用子 shell）
 load_nvm() {
     if [ -z "${NVM_DIR:-}" ]; then
-        NVM_DIR="$HOME/.nvm"
+        export NVM_DIR="$HOME/.nvm"
     fi
 
     if [ -s "$NVM_DIR/nvm.sh" ]; then
@@ -273,6 +305,22 @@ load_nvm() {
         if command -v nvm >/dev/null 2>&1; then
             return 0
         fi
+    fi
+    return 1
+}
+
+# 确保 nvm 在当前 shell 中可用（用于 install_node_lts）
+ensure_nvm_loaded() {
+    if ! load_nvm; then
+        # 尝试直接加载
+        if [ -s "$NVM_DIR/nvm.sh" ]; then
+            export NVM_DIR
+            . "$NVM_DIR/nvm.sh" nvm
+        fi
+    fi
+    # 验证 nvm 是否可用
+    if command -v nvm >/dev/null 2>&1; then
+        return 0
     fi
     return 1
 }
@@ -327,10 +375,11 @@ install_nvm() {
     fi
 
     # 验证 nvm 可用
-    if command_exists nvm; then
+    if command_exists nvm && nvm --version &>/dev/null; then
         log_info "nvm 加载成功: $(nvm --version)"
     else
-        log_warn "nvm 加载验证失败，Node.js 安装可能受影响"
+        log_error "nvm 加载验证失败，请检查安装或手动运行: source $NVM_DIR/nvm.sh"
+        return 1
     fi
 }
 
@@ -368,11 +417,11 @@ install_uv() {
     fi
 }
 
-# 安装 Node.js LTS
+# 安装 Node.js LTS（修复 nvm 加载问题）
 install_node_lts() {
     log_step "安装 Node.js LTS..."
 
-    # 加载 nvm
+    # 加载 nvm（不在子 shell 中，确保后续命令可用）
     if ! load_nvm; then
         log_error "nvm 未安装或加载失败，无法安装 Node.js"
         return 1
@@ -395,16 +444,12 @@ install_node_lts() {
         existing_versions=$(ls -1 "$NVM_DIR/versions/node" 2>/dev/null || echo "")
     fi
 
-    # nvm install --lts 可能在严格模式下失败 (PROVIDED_VERSION unbound)
-    # 使用子 shell 执行，避免影响主脚本
+    # 直接在当前 shell 中安装 Node.js（不使用子 shell）
     log_info "安装 Node.js LTS..."
-    (
-        set +euo pipefail
-        export NVM_DIR="$HOME/.nvm"
-        # shellcheck source=/dev/null
-        . "$NVM_DIR/nvm.sh" nvm
-        nvm install --lts 2>&1 | grep -v "unbound variable" || true
-    )
+    if ! nvm install --lts 2>&1; then
+        # nvm install 失败时尝试手动处理
+        log_warn "nvm install --lts 失败，尝试备选方案..."
+    fi
 
     # 查找新安装的版本
     local new_version=""
@@ -422,14 +467,15 @@ install_node_lts() {
         new_version=$(ls -1 "$NVM_DIR/versions/node" | tail -1)
     fi
 
-    # 手动设置 PATH
+    # 手动设置 PATH 并切换到新版本
     if [ -n "$new_version" ] && [ -d "$NVM_DIR/versions/node/$new_version/bin" ]; then
         export PATH="$NVM_DIR/versions/node/$new_version/bin:$PATH"
+        nvm use --lts >/dev/null 2>&1 || true
         log_info "Node.js 安装完成: v$new_version (npm 已包含)"
     elif command_exists node; then
         log_info "Node.js 安装完成: $(node --version)"
     else
-        log_warn "Node.js 安装验证失败"
+        log_warn "Node.js 安装验证失败，请手动运行 'nvm install --lts'"
         return 1
     fi
 
@@ -505,11 +551,21 @@ install_claude_code() {
         return 0
     fi
 
+    # 禁用 set -e 以捕获 npm 安装错误
+    set +e
     npm install -g @anthropic-ai/claude-code
+    local npm_result=$?
+    set -e
+
+    # 刷新命令缓存，确保新安装的命令可用
+    hash -r 2>/dev/null || true
 
     # 验证安装
     if command_exists claude; then
         log_info "Claude Code 安装完成: $(claude --version)"
+    elif [ $npm_result -ne 0 ]; then
+        log_error "Claude Code npm 安装失败 (exit code: $npm_result)，请检查网络连接或手动安装"
+        return 1
     else
         log_error "Claude Code 安装验证失败"
         return 1
@@ -628,12 +684,27 @@ install_superclaude() {
     fi
 
     # npm install 时，SuperClaude 的 install.js 应该能找到正确的 python3 和 pip3
+    # 禁用 set -e 以捕获 npm 安装错误
+    set +e
     npm install -g @bifrost_inc/superclaude
+    local npm_result=$?
+    set -e
+
+    if [ $npm_result -ne 0 ]; then
+        log_warn "SuperClaude npm 安装可能失败，请手动运行 'npm install -g @bifrost_inc/superclaude'"
+    fi
 
     # 刷新 PATH 以包含 npm 全局安装的命令
     # npm 全局安装的命令在 $NVM_DIR/versions/node/*/bin
+    # macOS BSD find 兼容：不使用 -maxdepth，使用通配符遍历
     if [ -d "$NVM_DIR/versions/node" ]; then
-        local node_bin=$(find "$NVM_DIR/versions/node" -maxdepth 2 -name "bin" -type d | head -1)
+        local node_bin=""
+        for dir in "$NVM_DIR/versions/node"/*/bin; do
+            if [ -d "$dir" ]; then
+                node_bin="$dir"
+                break
+            fi
+        done
         if [ -n "$node_bin" ] && [ -d "$node_bin" ]; then
             export PATH="$node_bin:$PATH"
             log_info "PATH 已更新: $node_bin"
@@ -669,7 +740,7 @@ install_superclaude() {
         log_info "SuperClaude 安装完成: $(superclaude --version)"
     else
         log_warn "SuperClaude 安装验证失败，请手动运行 'superclaude install'"
-        log_info "提示: 重启终端或运行: source ~/.bashrc"
+        log_info "提示: 请关闭当前终端并打开一个新终端以使用 SuperClaude"
     fi
 }
 
@@ -689,12 +760,59 @@ install_opencode() {
         return 0
     fi
 
+    # 禁用 set -e 以捕获 npm 安装错误
+    set +e
     npm install -g opencode-ai
+    local opencode_result=$?
+    set -e
+
+    # 刷新命令缓存
+    hash -r 2>/dev/null || true
 
     if command_exists opencode; then
         log_info "OpenCode 安装完成"
+    elif [ $opencode_result -ne 0 ]; then
+        log_warn "OpenCode npm 安装可能失败 (exit code: $opencode_result)"
     else
         log_warn "OpenCode 安装验证失败"
+    fi
+}
+
+# 安装 AgentStudio
+install_agentstudio() {
+    if [ "$SKIP_AGENTSTUDIO" == "1" ]; then
+        log_warn "跳过 AgentStudio 安装"
+        return 0
+    fi
+
+    if command_exists agentstudio; then
+        local version
+        version=$(agentstudio --version 2>/dev/null | head -1 || echo "installed")
+        log_info "AgentStudio 已安装: $version"
+        return 0
+    fi
+
+    log_step "安装 AgentStudio..."
+    if [ "$DRY_RUN" == "1" ]; then
+        log_debug "npm install -g agentstudio"
+        return 0
+    fi
+
+    # 禁用 set -e 以捕获 npm 安装错误
+    set +e
+    npm install -g agentstudio
+    local agentstudio_result=$?
+    set -e
+
+    # 刷新命令缓存
+    hash -r 2>/dev/null || true
+
+    if command_exists agentstudio; then
+        log_info "AgentStudio 安装完成"
+    elif [ $agentstudio_result -ne 0 ]; then
+        log_warn "AgentStudio npm 安装可能失败 (exit code: $agentstudio_result)"
+    else
+        log_warn "AgentStudio 安装验证失败"
     fi
 }
 
@@ -847,7 +965,7 @@ main() {
         echo "=============================================="
         echo "  安装检查完成!"
         echo "=============================================="
-        echo "请重启终端或运行: source ~/.bashrc"
+        echo "提示: 请关闭当前终端并打开一个新终端以使用安装的工具"
         echo ""
         exit 0
     fi
@@ -879,6 +997,9 @@ main() {
     # 10. 安装 OpenCode
     install_opencode
 
+    # 10.5 安装 AgentStudio
+    install_agentstudio
+
     # 11. 安装 cc-switch (仅 macOS)
     install_cc_switch
 
@@ -890,11 +1011,8 @@ main() {
     echo "  安装完成!"
     echo "=============================================="
     echo ""
-    echo "请重启终端或运行以下命令加载环境:"
-    echo "  source ~/.bashrc  # bash"
-    echo "  source ~/.zshrc   # zsh"
-    echo ""
-    echo "然后运行 'claude' 开始使用!"
+    echo "请关闭当前终端并打开一个新终端以使用 Claude Code!"
+    echo "运行 'claude' 开始使用!"
     echo ""
 }
 

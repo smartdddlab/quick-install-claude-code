@@ -831,11 +831,11 @@ install_cc_switch() {
         if command_exists brew; then
             log_info "通过 Homebrew 安装 cc-switch..."
             if [ "$DRY_RUN" == "1" ]; then
-                log_debug "brew tap farion1231/ccswitch && brew install --cask cc-switch"
+                log_debug "brew tap farion1231/cc-switch && brew install --cask cc-switch"
                 return 0
             fi
 
-            brew tap farion1231/ccswitch
+            brew tap farion1231/cc-switch
             brew install --cask cc-switch
 
             if command_exists cc-switch; then
